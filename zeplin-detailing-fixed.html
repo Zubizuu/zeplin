@@ -1,0 +1,3059 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zeplin Detailing | Oto Yıkama ve Detailing Otomasyonu</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    html { scroll-behavior: smooth; }
+    body {
+      background:
+        radial-gradient(circle at 20% 20%, rgba(34,211,238,0.16), transparent 24%),
+        radial-gradient(circle at 80% 10%, rgba(59,130,246,0.14), transparent 25%),
+        radial-gradient(circle at 70% 80%, rgba(14,165,233,0.08), transparent 25%),
+        linear-gradient(180deg, #020617 0%, #030712 42%, #020617 100%);
+      min-height: 100vh;
+    }
+    .aurora {
+      position: fixed;
+      inset: auto auto 0 0;
+      width: 28rem;
+      height: 28rem;
+      filter: blur(70px);
+      border-radius: 999px;
+      opacity: .22;
+      pointer-events: none;
+      animation: drift 16s ease-in-out infinite alternate;
+      z-index: 0;
+    }
+    .aurora.a { top: -8rem; left: -8rem; background: #06b6d4; }
+    .aurora.b { top: 8rem; right: -10rem; left: auto; background: #2563eb; animation-delay: -5s; }
+    .aurora.c { bottom: -10rem; left: 30%; background: #0f766e; animation-delay: -10s; }
+    @keyframes drift {
+      0% { transform: translate3d(0,0,0) scale(1); }
+      100% { transform: translate3d(24px,-18px,0) scale(1.12); }
+    }
+    @keyframes rise {
+      0% { opacity: 0; transform: translateY(16px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulseSoft {
+      0%,100% { box-shadow: 0 0 0 0 rgba(34,211,238,.12); }
+      50% { box-shadow: 0 0 0 12px rgba(34,211,238,0); }
+    }
+    .rise { animation: rise .45s ease-out both; }
+    .glass {
+      background: rgba(2,6,23,.72);
+      border: 1px solid rgba(148,163,184,.12);
+      box-shadow: 0 20px 60px rgba(0,0,0,.38);
+      backdrop-filter: blur(18px);
+    }
+    .neon-border { box-shadow: inset 0 0 0 1px rgba(34,211,238,.14), 0 0 0 1px rgba(34,211,238,.04); }
+    .scrollbar-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(148,163,184,.34); border-radius: 999px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .tab-active {
+      background: linear-gradient(135deg, rgba(6,182,212,.25), rgba(37,99,235,.28));
+      color: white;
+      border-color: rgba(34,211,238,.38);
+    }
+    .soft-input {
+      background: rgba(15,23,42,.78);
+      border: 1px solid rgba(148,163,184,.16);
+      color: #e2e8f0;
+      outline: none;
+      transition: .2s ease;
+    }
+    .soft-input:focus { border-color: rgba(34,211,238,.65); box-shadow: 0 0 0 3px rgba(34,211,238,.12); }
+    .soft-select {
+      background: rgba(15,23,42,.88);
+      border: 1px solid rgba(148,163,184,.16);
+      color: #e2e8f0;
+    }
+    .sheet-a4 {
+      width: 794px;
+      min-height: 1123px;
+      background: #fff;
+      color: #111827;
+      border-radius: 20px;
+      overflow: hidden;
+    }
+    .sheet-grid {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .toast-enter { animation: rise .3s ease-out both; }
+  </style>
+</head>
+<body class="text-slate-100 antialiased">
+  <div class="aurora a"></div>
+  <div class="aurora b"></div>
+  <div class="aurora c"></div>
+  <div id="shell" class="relative z-10"></div>
+
+  <div id="login-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
+    <div class="glass rise w-full max-w-md rounded-3xl p-6">
+      <div class="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <p class="text-xs uppercase tracking-[0.35em] text-cyan-300">Giriş</p>
+          <h2 class="mt-2 text-2xl font-semibold text-white">Güvenli Panele Erişim</h2>
+        </div>
+        <button id="close-login" class="rounded-full border border-slate-700 px-3 py-2 text-slate-300 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label class="mb-2 block text-sm text-slate-300">Kullanıcı Adı</label>
+          <input id="login-username" autocomplete="username" autocapitalize="off" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="Kullanıcı adı" />
+        </div>
+        <div>
+          <label class="mb-2 block text-sm text-slate-300">Şifre</label>
+          <input id="login-password" type="password" autocomplete="current-password" inputmode="numeric" pattern="[0-9]*" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="••••••••" />
+        </div>
+        <p id="login-error" class="hidden rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"></p>
+        <button class="w-full rounded-2xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300">Giriş Yap</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="quote-modal" class="fixed inset-0 z-50 hidden flex-col bg-slate-950/95 backdrop-blur-sm">
+    <!-- Modal Header - Sabit Üst -->
+    <div class="flex-shrink-0 border-b border-slate-800 bg-slate-950/90 px-4 py-3">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-[10px] uppercase tracking-[0.3em] text-cyan-300">Teklif Önizleme</p>
+          <h2 class="truncate text-lg font-semibold text-white">A4 Şablon</h2>
+        </div>
+        <button id="close-quote" class="flex-shrink-0 rounded-full border border-slate-700 px-3 py-2 text-slate-300 transition hover:border-cyan-400 hover:text-cyan-200">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+    </div>
+    
+    <!-- Modal Content - Kaydırılabilir Orta -->
+    <div class="flex-1 overflow-auto p-4">
+      <div id="quote-sheet-preview" class="mx-auto w-full max-w-[794px] shadow-2xl"></div>
+    </div>
+    
+    <!-- Modal Footer - Sabit Alt Butonlar -->
+    <div class="flex-shrink-0 border-t border-slate-800 bg-slate-950/90 px-4 py-3">
+      <div class="grid grid-cols-3 gap-2">
+        <button id="download-quote-pdf" class="rounded-xl bg-rose-500 px-2 py-3 text-xs font-semibold text-white transition hover:bg-rose-400">
+          <i class="fa-solid fa-file-pdf mb-1 block text-lg"></i>PDF İndir
+        </button>
+        <button id="download-quote-jpeg" class="rounded-xl bg-cyan-500 px-2 py-3 text-xs font-semibold text-white transition hover:bg-cyan-400">
+          <i class="fa-solid fa-image mb-1 block text-lg"></i>JPEG İndir
+        </button>
+        <button id="share-quote-whatsapp" class="rounded-xl bg-emerald-500 px-2 py-3 text-xs font-semibold text-white transition hover:bg-emerald-400">
+          <i class="fa-brands fa-whatsapp mb-1 block text-lg"></i>Paylaş
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-root" class="pointer-events-none fixed right-4 top-4 z-[60] space-y-3"></div>
+
+  <div id="customer-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/85 px-4 py-6 backdrop-blur-sm">
+    <div class="glass rise w-full max-w-4xl rounded-[2rem] p-6">
+      <div class="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <p class="text-xs uppercase tracking-[0.35em] text-cyan-300">Müşteri Kartı</p>
+          <h2 id="customer-modal-title" class="text-2xl font-semibold text-white">Geçmiş İşlemler</h2>
+        </div>
+        <button id="close-customer-modal" class="rounded-full border border-slate-700 px-3 py-2 text-slate-300 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="customer-modal-content" class="space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin pr-2"></div>
+    </div>
+  </div>
+
+  <div id="edit-record-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/85 px-4 py-6 backdrop-blur-sm">
+    <div class="glass rise w-full max-w-2xl rounded-[2rem] p-6">
+      <div class="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <p class="text-xs uppercase tracking-[0.35em] text-cyan-300">Kayıt Düzenleme</p>
+          <h2 class="text-2xl font-semibold text-white">Araç Kaydını Güncelle</h2>
+        </div>
+        <button id="close-edit-record-modal" class="rounded-full border border-slate-700 px-3 py-2 text-slate-300 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="edit-record-form" class="space-y-4">
+        <input type="hidden" name="id" id="edit-record-id" />
+        <div class="grid gap-4 sm:grid-cols-2">
+          <input name="plate" id="edit-plate" class="soft-input rounded-2xl px-4 py-3 uppercase" placeholder="Plaka" required />
+          <input name="customerName" id="edit-customerName" class="soft-input rounded-2xl px-4 py-3" placeholder="Müşteri Adı" required />
+          <input name="phone" id="edit-phone" class="soft-input rounded-2xl px-4 py-3" placeholder="Telefon" required />
+          <input name="vehicle" id="edit-vehicle" class="soft-input rounded-2xl px-4 py-3" placeholder="Araç Marka / Model" />
+          <div class="sm:col-span-1">
+            <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Hizmet</label>
+            <select id="edit-service-select" name="serviceId" class="soft-select w-full rounded-2xl px-4 py-3"></select>
+          </div>
+          <input name="amount" id="edit-amount" type="number" min="0" class="soft-input rounded-2xl px-4 py-3" placeholder="Tutar" />
+          <div class="sm:col-span-1">
+            <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Durum</label>
+            <select name="status" id="edit-status" class="soft-select w-full rounded-2xl px-4 py-3">
+              <option>Sırada</option>
+              <option>Yıkamada</option>
+              <option>Detayda</option>
+              <option>Cila</option>
+              <option>Hazır</option>
+              <option>Teslim Edildi</option>
+            </select>
+          </div>
+          <input name="staffName" id="edit-staffName" class="soft-input rounded-2xl px-4 py-3" placeholder="Personel" />
+        </div>
+        <textarea name="notes" id="edit-notes" rows="3" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="Not / İşlem Detayı"></textarea>
+        <div class="flex justify-end gap-3">
+          <button type="button" id="cancel-edit-record" class="rounded-2xl border border-slate-700 px-5 py-3 text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200">İptal</button>
+          <button type="submit" class="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300">Kaydet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyClMK30t0CDsIcmi7qR3YWNntfs4TejKYU",
+      authDomain: "zeplin-detailing-a98c0.firebaseapp.com",
+      databaseURL: "https://zeplin-detailing-a98c0-default-rtdb.firebaseio.com",
+      projectId: "zeplin-detailing-a98c0",
+      storageBucket: "zeplin-detailing-a98c0.firebasestorage.app",
+      messagingSenderId: "360412527872",
+      appId: "1:360412527872:web:94a73c99233d893df847e5",
+      measurementId: "G-JTM83KZP9P"
+    };
+
+    // Firebase initialize (CDN SDK)
+    let app, db;
+    try {
+      app = firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      console.log("✅ Firebase Realtime Database başarıyla bağlandı");
+    } catch (err) {
+      console.error("❌ Firebase bağlantısı başarısız:", err);
+    }
+
+    const defaultSettings = {
+      companyName: "Zeplin Detailing",
+      subtitle: "Oto Yıkama, Detailing ve Randevu Otomasyonu",
+      address: "İstanbul, Türkiye",
+      phone: "+90 555 000 00 00",
+      whatsappNumber: "905550000000",
+      workingHours: "09:00 - 19:00",
+      footerNote: "Teşekkür ederiz. Parlatılmış teslimat, kusursuz izlenim.",
+      logoDataUrl: "",
+      commissionFixed: 0,
+      commissionPercent: 10,
+      services: [
+        { id: "dis-yikama", name: "Dış Yıkama", category: "wash", price: 550 },
+        { id: "ic-dis-detay", name: "İç Dış Detay", category: "detail", price: 1850 },
+        { id: "pasta-cila", name: "Pasta Cila", category: "detail", price: 3200 },
+        { id: "seramik", name: "Seramik Koruma", category: "detail", price: 7800 },
+        { id: "motor", name: "Motor Temizliği", category: "detail", price: 1250 }
+      ]
+    };
+
+    const state = {
+      workSchedules: {},
+      session: JSON.parse(localStorage.getItem("zd_session") || "null"),
+      tab: "dashboard",
+      users: [],
+      records: [],
+      expenses: [],
+      appointments: [],
+      quotes: [],
+      logs: [],
+      reminders: [],
+      settings: defaultSettings,
+      quoteDraft: null,
+      pendingHistoryPlate: "",
+      seedLock: false,
+      newAppointmentCount: 0,
+      lastAppointmentCount: 0
+    };
+
+    const moneyFmt = new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 });
+    const shortDateFmt = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const dateTimeFmt = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+    const $ = (sel, parent = document) => parent.querySelector(sel);
+    const $$ = (sel, parent = document) => Array.from(parent.querySelectorAll(sel));
+    const cssEscape = (value) => window.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/["\\]/g, "\\$&");
+    const nowISO = () => new Date().toISOString();
+    const uid = (prefix = "id") => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+    const normalizePlate = (v) => String(v || "").toUpperCase().replace(/\s+/g, "").replace(/İ/g, "I").replace(/İ/g, "I");
+    const normalizePhone = (v) => String(v || "").replace(/\D/g, "");
+
+    function formatPlate(v) {
+      const raw = normalizePlate(v);
+      if (raw.length <= 2) return raw;
+      if (raw.length <= 5) return raw.slice(0, 2) + " " + raw.slice(2);
+      if (raw.length <= 7) return raw.slice(0, 2) + " " + raw.slice(2, 5) + " " + raw.slice(5);
+      return raw.slice(0, 2) + " " + raw.slice(2, 5) + " " + raw.slice(5, 8);
+    }
+
+    function formatPhone(v) {
+      const raw = normalizePhone(v).replace(/^90/, "").replace(/^0/, "");
+      if (raw.length === 0) return "+90 ";
+      if (raw.length <= 3) return "+90 " + raw;
+      if (raw.length <= 6) return "+90 " + raw.slice(0, 3) + " " + raw.slice(3);
+      if (raw.length <= 8) return "+90 " + raw.slice(0, 3) + " " + raw.slice(3, 6) + " " + raw.slice(6);
+      return "+90 " + raw.slice(0, 3) + " " + raw.slice(3, 6) + " " + raw.slice(6, 8) + " " + raw.slice(8, 10);
+    }
+
+    function maskName(name) {
+      if (!name) return "***";
+      const parts = name.trim().split(/\s+/);
+      return parts.map(p => p.charAt(0).toUpperCase() + '***').join(' ');
+    }
+    function maskPhone(phone) {
+      return "+90 *** *** ** **";
+    }
+    function maskPlate(plate) {
+      if (!plate) return "***";
+      const parts = plate.trim().split(/\s+/);
+      if (parts.length >= 1) return parts[0] + " *** ***";
+      return "***";
+    }
+
+    const money = (v) => moneyFmt.format(Number(v || 0));
+    const formatShortDate = (v) => v ? shortDateFmt.format(new Date(v)) : "-";
+    const formatDateTime = (v) => v ? dateTimeFmt.format(new Date(v)) : "-";
+    const openModal = (id) => { 
+      try {
+        console.log("Modal açılıyor:", id);
+        const el = $(id); 
+        if (!el) {
+          console.error("Modal elementi bulunamadı:", id);
+          toast("Hata", "Pencere açılamadı. Sayfayı yenileyin.", "red");
+          return;
+        }
+        el.classList.remove("hidden"); 
+        el.classList.add("flex"); 
+        console.log("Modal başarıyla açıldı:", id);
+      } catch (err) {
+        console.error("Modal açma hatası:", err);
+        toast("Hata", "Pencere açılırken hata: " + err.message, "red");
+      }
+    };
+    const closeModal = (id) => { const el = $(id); el.classList.add("hidden"); el.classList.remove("flex"); };
+
+    function toast(title, text, tone = "cyan") {
+      const root = $("#toast-root");
+      const icons = {
+        cyan: "fa-circle-info",
+        green: "fa-circle-check",
+        red: "fa-circle-exclamation",
+        amber: "fa-bell"
+      };
+      const colors = {
+        cyan: "border-cyan-400/30 bg-cyan-900/80 text-cyan-100",
+        green: "border-emerald-400/30 bg-emerald-900/80 text-emerald-100",
+        red: "border-rose-400/30 bg-rose-900/80 text-rose-100",
+        amber: "border-amber-400/30 bg-amber-900/80 text-amber-100"
+      };
+      const el = document.createElement("div");
+      el.className = `toast-enter pointer-events-auto w-[min(92vw,380px)] rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-md flex items-start gap-3 ${colors[tone] || colors.cyan}`;
+      el.innerHTML = `
+        <div class="mt-0.5 text-xl"><i class="fa-solid ${icons[tone] || icons.cyan}"></i></div>
+        <div class="min-w-0 flex-1">
+          <p class="font-bold text-white text-sm">${esc(title)}</p>
+          <p class="mt-0.5 text-xs text-slate-200/90 leading-relaxed">${esc(text)}</p>
+        </div>
+        <button class="text-slate-200/50 transition hover:text-white" aria-label="Kapat"><i class="fa-solid fa-xmark"></i></button>`;
+      const closeBtn = $('button', el);
+      closeBtn.addEventListener('click', () => el.remove());
+      root.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(-10px)';
+        setTimeout(() => el.remove(), 300);
+      }, 4000);
+    }
+
+    function playNotificationSound() {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.5);
+        setTimeout(() => {
+          const osc2 = audioCtx.createOscillator();
+          const gain2 = audioCtx.createGain();
+          osc2.connect(gain2);
+          gain2.connect(audioCtx.destination);
+          osc2.frequency.value = 1000;
+          osc2.type = 'sine';
+          gain2.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+          osc2.start(audioCtx.currentTime);
+          osc2.stop(audioCtx.currentTime + 0.5);
+        }, 200);
+      } catch (err) {
+        console.warn('Sesli uyarı çalınamadı:', err);
+      }
+    }
+
+    function serviceList() {
+      return Array.isArray(state.settings?.services) && state.settings.services.length ? state.settings.services : defaultSettings.services;
+    }
+
+    function serviceMetaById(id) {
+      return serviceList().find((s) => s.id === id) || serviceList().find((s) => s.name === id) || null;
+    }
+
+    function whatsappLink(phone, text) {
+      const n = normalizePhone(phone || state.settings.whatsappNumber || state.settings.phone);
+      const msg = text ? `?text=${encodeURIComponent(text)}` : "";
+      return `https://wa.me/${n}${msg}`;
+    }
+
+    function parseDateValue(v) {
+      const d = v ? new Date(v) : new Date();
+      return Number.isNaN(d.getTime()) ? new Date() : d;
+    }
+
+    function recordsByPlate(plateInput) {
+      const plate = normalizePlate(plateInput);
+      if (!plate) return [];
+      return state.records.filter((r) => normalizePlate(r.plate || r.plaka) === plate);
+    }
+
+    function categoryOf(record) {
+      return record.serviceCategory || serviceMetaById(record.serviceId)?.category || (String(record.serviceName || record.service || "").toLowerCase().includes("yıkama") || String(record.serviceName || record.service || "").toLowerCase().includes("yikama") ? "wash" : "detail");
+    }
+
+    function revenueTotal() {
+      return state.records.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    }
+
+    function expenseTotal() {
+      return state.expenses.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    }
+
+    function netProfit() {
+      return revenueTotal() - expenseTotal();
+    }
+
+    function todayKey() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function isToday(v) {
+      return String(v || "").slice(0, 10) === todayKey();
+    }
+
+    function dueCandidates() {
+      const grouped = new Map();
+      state.records.forEach((r) => {
+        const key = `${normalizePhone(r.phone || "")}__${normalizePlate(r.plate || "")}__${String(r.customerName || r.customer || "").trim().toLowerCase()}`;
+        if (!grouped.has(key)) grouped.set(key, { ...r, lastWash: null, lastDetail: null });
+        const item = grouped.get(key);
+        const d = parseDateValue(r.createdAt);
+        if (categoryOf(r) === "wash") {
+          if (!item.lastWash || d > new Date(item.lastWash)) item.lastWash = r.createdAt;
+        } else {
+          if (!item.lastDetail || d > new Date(item.lastDetail)) item.lastDetail = r.createdAt;
+        }
+        if (!item.lastAny || d > new Date(item.lastAny)) item.lastAny = r.createdAt;
+      });
+
+      const now = Date.now();
+      const list = [];
+      grouped.forEach((item) => {
+        if (item.lastWash) {
+          const days = Math.floor((now - new Date(item.lastWash).getTime()) / 86400000);
+          if (days >= 30) list.push({ ...item, reminderType: "Yıkama", overdue: days, lastDate: item.lastWash, threshold: 30 });
+        }
+        if (item.lastDetail) {
+          const days = Math.floor((now - new Date(item.lastDetail).getTime()) / 86400000);
+          if (days >= 180) list.push({ ...item, reminderType: "Detailing", overdue: days, lastDate: item.lastDetail, threshold: 180 });
+        }
+      });
+      return list.sort((a, b) => b.overdue - a.overdue);
+    }
+
+    function renderShell() {
+      const user = state.session;
+      const isStaff = !!user;
+      const isAdmin = user?.role === "Yönetici";
+      const tabs = isAdmin
+        ? [
+            ["dashboard", "Genel Bakış", "fa-gauge-high"],
+            ["appointments", "Randevular", "fa-calendar-check"],
+            ["records", "Kayıtlar", "fa-clipboard-list"],
+            ["quote", "Teklif", "fa-file-signature"],
+            ["finance", "Finans", "fa-sack-dollar"],
+            ["reports", "Raporlama", "fa-chart-line"],
+            ["logs", "Aktivite Logu", "fa-shield-halved"],
+            ["reminders", "Anımsatıcı", "fa-bell"],
+            ["users", "Kullanıcılar", "fa-users-gear"],
+            ["settings", "Firma Ayarları", "fa-sliders"],
+          ]
+        : [
+            ["dashboard", "Genel Bakış", "fa-gauge-high"],
+            ["records", "Kayıtlar", "fa-clipboard-list"],
+            ["quote", "Teklif", "fa-file-signature"],
+          ];
+
+      const activeTab = tabs.some(([key]) => key === state.tab) ? state.tab : "dashboard";
+      state.tab = activeTab;
+
+      const headerLabel = isStaff ? `${user.role} Paneli` : "Müşteri Randevu Paneli";
+      const newApptBadge = state.newAppointmentCount > 0
+        ? `<span class="ml-2 inline-flex items-center justify-center rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-950 animate-pulse">${state.newAppointmentCount} Yeni</span>`
+        : '';
+      const actionButton = isStaff
+        ? `<button id="logout-btn" class="inline-flex items-center gap-2 rounded-2xl border border-slate-700/80 px-4 py-2 text-sm text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-right-from-bracket"></i>Çıkış Yap</button>${newApptBadge}`
+        : `<button id="open-login" class="inline-flex items-center gap-2 rounded-2xl border border-slate-700/80 px-4 py-2 text-sm text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-user-lock"></i>Giriş</button>`;
+
+      const topBadge = isStaff
+        ? `<span class="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-200">${esc(user.username)} · ${esc(user.role)}</span>`
+        : `<span class="rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-xs font-medium text-slate-300">Dışa açık müşteri formu</span>`;
+
+      const topNav = isStaff
+        ? `<div class="hide-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-thin">${tabs.map(([key, label, icon]) => `<button data-tab="${key}" class="tab-btn ${state.tab === key ? 'tab-active' : 'border border-slate-800 bg-slate-950/60 text-slate-300'} rounded-2xl px-4 py-2 text-sm whitespace-nowrap transition hover:border-cyan-400/40 hover:text-white"><i class="fa-solid ${icon} mr-2"></i>${label}</button>`).join("")}</div>`
+        : "";
+
+      const topNote = isStaff ? "" : `<div class="mt-4 rounded-2xl border border-slate-800 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">Müşteriler şifre istemeden randevu oluşturabilir.</div>`;
+
+      const customerPanel = `
+        <section class="mx-auto max-w-7xl px-4 py-6 sm:py-8">
+          <div class="glass rise flex items-center justify-between gap-4 rounded-3xl px-4 py-3 neon-border">
+            <div class="flex items-center gap-3">
+              ${renderBrandMark()}
+              <div>
+                <p class="text-xs uppercase tracking-[0.35em] text-cyan-300">${esc(headerLabel)}</p>
+                <p class="mt-1 text-sm text-slate-300">${esc(state.settings.companyName || defaultSettings.companyName)}</p>
+              </div>
+            </div>
+            <div>${actionButton}</div>
+          </div>
+          ${topNote}
+          <div class="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
+            <div class="glass rise rounded-[2rem] p-5 sm:p-7 neon-border">
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div class="flex items-center gap-3">
+                    ${renderBrandMark()}
+                    <div>
+                      <p class="text-xs uppercase tracking-[0.4em] text-cyan-300">${esc(state.settings.companyName || defaultSettings.companyName)}</p>
+                      <h1 class="mt-2 text-3xl font-semibold text-white sm:text-4xl">Müşteri Randevu Paneli</h1>
+                    </div>
+                  </div>
+                  <p class="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">Lüks detailing deneyimi için tek ekrandan randevu oluşturun. Şeffaf fiyatlar, hızlı geri dönüş ve kayıt altında servis akışı.</p>
+                </div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
+                  <div class="flex items-center gap-2 text-cyan-300"><i class="fa-solid fa-clock"></i><span>${esc(state.settings.workingHours || defaultSettings.workingHours)}</span></div>
+                  <div class="mt-2 flex items-center gap-2"><i class="fa-brands fa-whatsapp text-emerald-300"></i><span>${esc(state.settings.phone || defaultSettings.phone)}</span></div>
+                </div>
+              </div>
+
+              <div class="mt-6">
+                <div class="rounded-3xl border border-slate-800 bg-slate-950/60 p-4">
+                  <p class="text-sm font-medium text-slate-200">Anında Randevu Oluştur</p>
+                  <form id="customer-booking-form" class="mt-4 grid gap-4 sm:grid-cols-2">
+                    <input name="name" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Ad Soyad" required />
+                    <input name="phone" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="+90 5XX XXX XX XX" value="+90 " required />
+                    <input name="plate" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1 uppercase" placeholder="34 ABC 123" maxlength="12" required />
+                    <input name="vehicle" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Araç Marka / Model" />
+                    <div class="sm:col-span-2">
+                      <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Hizmet</label>
+                      <select id="public-service-select" name="serviceId" class="soft-input w-full rounded-2xl px-4 py-3"></select>
+                    </div>
+                    <input name="date" type="date" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" required />
+                    <div class="sm:col-span-1">
+                      <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Randevu Saati</label>
+                      <select id="public-time-select" name="time" class="soft-input w-full rounded-2xl px-4 py-3"></select>
+                    </div>
+                    <textarea name="note" rows="3" class="soft-input rounded-2xl px-4 py-3 sm:col-span-2" placeholder="Not / Talep"></textarea>
+                    <button type="submit" class="sm:col-span-2 rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300">Randevu Oluştur</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <aside class="space-y-6">
+              <div class="glass rise rounded-[2rem] p-5 neon-border">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Canlı Liste</p>
+                    <h2 class="mt-1 text-xl font-semibold text-white">Son Randevular</h2>
+                  </div>
+                  <span class="rounded-full border border-slate-800 bg-slate-950/55 px-3 py-1 text-xs text-slate-300">Firebase Live</span>
+                </div>
+                <div id="public-appointments-feed" class="mt-4 space-y-3"></div>
+              </div>
+            </aside>
+          </div>
+        </section>`;
+
+      const staffPanel = `
+        <header class="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-xl">
+          <div class="mx-auto max-w-7xl px-4 py-2">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2 min-w-0">
+                ${renderBrandMark()}
+                <div class="min-w-0">
+                  <p class="text-[10px] uppercase tracking-[0.3em] text-cyan-300">${esc(state.settings.companyName || defaultSettings.companyName)}</p>
+                  <h1 class="text-sm font-semibold text-white truncate">Yönetim Paneli</h1>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 flex-shrink-0">${actionButton}</div>
+            </div>
+          </div>
+          <div class="border-t border-slate-800/50">
+            <div class="mx-auto max-w-7xl px-4 py-2">
+              <div class="hide-scrollbar flex gap-2 overflow-x-auto pb-1 scrollbar-thin">${tabs.map(([key, label, icon]) => `<button data-tab="${key}" class="tab-btn ${state.tab === key ? 'tab-active' : 'border border-slate-800 bg-slate-950/60 text-slate-300'} rounded-xl px-3 py-1.5 text-xs whitespace-nowrap transition hover:border-cyan-400/40 hover:text-white"><i class="fa-solid ${icon} mr-1"></i>${label}</button>`).join("")}</div>
+            </div>
+          </div>
+        </header>
+        <main class="mx-auto max-w-7xl px-4 py-4">
+          <div id="tab-content"></div>
+        </main>`;
+
+      document.getElementById("shell").innerHTML = isStaff ? staffPanel : customerPanel;
+      updatePublicServiceSelect();
+      if (isStaff) renderActiveTab();
+      updatePublicAppointments();
+      updateStatusSummary();
+      updateMaintenanceBook();
+    }
+
+    function renderBrandMark() {
+      const logo = state.settings?.logoDataUrl;
+      if (logo) {
+        return `<div class="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-cyan-400/25 bg-slate-900"><img src="${logo}" alt="Logo" class="h-full w-full object-cover" /></div>`;
+      }
+      return `<div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/25 bg-gradient-to-br from-cyan-400/20 to-blue-500/20 text-lg font-bold text-cyan-200">ZD</div>`;
+    }
+
+    function generateTimeSlots() {
+      const slots = [];
+      const startHour = 9;
+      const endHour = 19;
+      for (let h = startHour; h < endHour; h++) {
+        slots.push(`${String(h).padStart(2, '0')}:00`);
+        slots.push(`${String(h).padStart(2, '0')}:30`);
+      }
+      return slots;
+    }
+
+    function getAvailableTimeSlots(dateStr) {
+      const allSlots = generateTimeSlots();
+      if (!dateStr) return allSlots.map((t) => ({ time: t, available: true }));
+      const bookedTimes = state.appointments
+        .filter((a) => a.requestedDate === dateStr && a.status !== 'İptal')
+        .map((a) => a.requestedTime);
+      return allSlots.map((t) => ({ time: t, available: !bookedTimes.includes(t) }));
+    }
+
+    function findNearestAvailableSlot(dateStr, requestedTime) {
+      const slots = getAvailableTimeSlots(dateStr);
+      const available = slots.filter((s) => s.available);
+      if (available.length === 0) return null;
+      const idx = available.findIndex((s) => s.time >= requestedTime);
+      return idx >= 0 ? available[idx].time : available[available.length - 1].time;
+    }
+
+    function updatePublicTimeSelect(dateStr) {
+      const select = document.getElementById("public-time-select");
+      if (!select) return;
+      const slots = getAvailableTimeSlots(dateStr);
+      select.innerHTML = slots.map((s) =>
+        `<option value="${esc(s.time)}" ${!s.available ? 'disabled' : ''}>${esc(s.time)}${s.available ? '' : ' - DOLU'}</option>`
+      ).join("");
+    }
+
+    function updatePublicServiceSelect() {
+      const select = document.getElementById("public-service-select");
+      if (!select) return;
+      const current = select.value;
+      select.innerHTML = serviceList().map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+      if (current) select.value = current;
+    }
+
+    function updateStaffServiceSelects() {
+      ["service-select", "quote-service-select", "settings-service-template"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const current = el.value;
+        el.innerHTML = serviceList().map((s) => `<option value="${esc(s.id)}">${esc(s.name)} - ${money(s.price)}</option>`).join("");
+        if (current) el.value = current;
+      });
+      $$("#quote-lines select[name='serviceId']").forEach((el) => {
+        const current = el.value;
+        el.innerHTML = serviceList().map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+        if (current) el.value = current;
+      });
+    }
+
+    function renderActiveTab() {
+      if (!state.session) return;
+      const tabContent = document.getElementById("tab-content");
+      if (!tabContent) return;
+      const isAdmin = state.session.role === "Yönetici";
+      const tabs = {
+        dashboard: renderDashboardTab(),
+        appointments: renderAppointmentsTab(),
+        records: renderRecordsTab(),
+        quote: renderQuoteTab(),
+        finance: isAdmin ? renderFinanceTab() : renderDashboardTab(),
+        reports: isAdmin ? renderReportsTab() : renderDashboardTab(),
+        logs: isAdmin ? renderLogsTab() : renderDashboardTab(),
+        reminders: isAdmin ? renderRemindersTab() : renderDashboardTab(),
+        users: isAdmin ? renderUsersTab() : renderDashboardTab(),
+        settings: isAdmin ? renderSettingsTab() : renderDashboardTab(),
+      };
+      tabContent.innerHTML = tabs[state.tab] || renderDashboardTab();
+      updateStaffServiceSelects();
+      updateMaintenanceBook();
+      if (state.tab === "quote") hydrateQuoteRows();
+      if (state.tab === "settings") hydrateSettingsRows();
+      if (state.tab === "users") renderUsersTable();
+      if (state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
+      if (state.tab === "reports") renderDailyReport();
+      if (state.tab === "reminders") { renderReminderList(); renderAllRemindersList(); }
+      if (state.tab === "records") renderRecordsTable();
+      if (state.tab === "appointments") renderAppointmentsTable();
+    }
+
+    function summaryMetricsHTML() {
+      const ready = state.records.filter((r) => (r.status || "Sırada") === "Hazır").length;
+      const active = state.records.filter((r) => !["Hazır", "Teslim Edildi"].includes(r.status || "Sırada")).length;
+      const todayIncome = state.records.filter((r) => isToday(r.createdAt)).reduce((sum, r) => sum + Number(r.amount || 0), 0);
+      const todayAppointments = state.appointments.filter((a) => isToday(a.createdAt)).length;
+      const cards = [
+        ["Toplam Ciro", money(revenueTotal()), "fa-sack-dollar", "from-cyan-400/20 to-blue-500/20"],
+        ["Toplam Gider", money(expenseTotal()), "fa-receipt", "from-rose-400/20 to-orange-500/20"],
+        ["Net Kâr", money(netProfit()), "fa-chart-line", "from-emerald-400/20 to-cyan-500/20"],
+        ["Hazır Araçlar", String(ready), "fa-car-side", "from-violet-400/20 to-fuchsia-500/20"],
+        ["Aktif Araçlar", String(active), "fa-spinner", "from-amber-400/20 to-yellow-500/20"],
+        ["Bugün Randevu", String(todayAppointments), "fa-calendar-check", "from-sky-400/20 to-cyan-500/20"],
+      ];
+      return cards.map(([label, value, icon, grad]) => `
+        <div class="glass rise rounded-3xl border border-slate-800 p-4 ${grad}">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs uppercase tracking-[0.25em] text-slate-400">${esc(label)}</p>
+              <p class="mt-2 text-2xl font-semibold text-white">${esc(value)}</p>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-white/5 p-3 text-cyan-200"><i class="fa-solid ${icon}"></i></div>
+          </div>
+          <div class="mt-3 h-1 rounded-full bg-white/5"><div class="h-full w-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-500"></div></div>
+        </div>`).join("");
+    }
+
+    function renderDashboardTab() {
+      const pendingAppointments = state.appointments.filter(a => a.status === 'Beklemede');
+      const pendingHtml = pendingAppointments.length ? pendingAppointments.map(a => `
+        <div class="rounded-3xl border border-amber-500/30 bg-amber-500/10 p-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold text-white">${esc(a.name)} <span class="text-slate-400">·</span> ${esc(a.plate)}</p>
+              <p class="mt-1 text-sm text-slate-300">${esc(a.serviceName)} · ${a.requestedDate} ${a.requestedTime}</p>
+              <p class="text-xs text-slate-400 mt-1">${esc(a.phone)} · ${esc(a.vehicle || '')}</p>
+            </div>
+            <div class="flex gap-2">
+              <span class="rounded-2xl border border-amber-500/30 px-3 py-2 text-xs text-amber-200"><i class="fa-solid fa-clock mr-1"></i>Onay Bekliyor</span>
+              <button data-tab="appointments" class="rounded-2xl bg-cyan-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-cyan-400"><i class="fa-solid fa-arrow-right mr-1"></i>Randevulara Git</button>
+            </div>
+          </div>
+        </div>
+      `).join('') : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-sm text-slate-400">Bekleyen randevu yok.</div>`;
+
+      return `
+        <section class="space-y-6">
+          <div id="summary-metrics" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
+          
+          ${pendingAppointments.length > 0 ? `
+          <div class="glass rise rounded-[2rem] p-5 neon-border border-amber-500/20">
+            <div class="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-amber-300">Bekleyen Randevular</p>
+                <h2 class="mt-1 text-2xl font-semibold text-white">Onay Bekleyen Talepler (${pendingAppointments.length})</h2>
+              </div>
+            </div>
+            <div class="space-y-3">
+              ${pendingHtml}
+            </div>
+          </div>
+          ` : ''}
+
+          <div class="grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Araç Kabul</p>
+                  <h2 class="mt-1 text-2xl font-semibold text-white">Canlı Kayıt ve Durum Takibi</h2>
+                </div>
+                <span class="rounded-full border border-slate-800 bg-slate-950/55 px-3 py-1 text-xs text-slate-300">Real-time</span>
+              </div>
+              <form id="vehicle-intake-form" class="mt-5 grid gap-4 sm:grid-cols-2">
+                <div class="sm:col-span-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                  <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-cyan-300">Randevulu Müşteri Getir (Opsiyonel)</label>
+                  <select id="appointment-selector" class="soft-input w-full rounded-2xl px-4 py-3">
+                    <option value="">-- Randevusuz Müşteri (Hızlı Giriş) --</option>
+                    ${state.appointments.filter(a => a.status === 'Onaylandı').map(a => `<option value="${a.id}">${a.requestedDate} ${a.requestedTime} - ${a.name} (${a.plate})</option>`).join('')}
+                  </select>
+                  <p class="mt-2 text-xs text-slate-400">Seçilen randevu otomatik olarak forma doldurulur ve araç kabul edildiğinde randevu "Tamamlandı" sayılır.</p>
+                </div>
+                <input name="plate" id="plate-input" class="soft-input rounded-2xl px-4 py-3 uppercase sm:col-span-1" placeholder="34 ABC 123" maxlength="12" required />
+                <input name="customerName" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Müşteri Adı" required />
+                <input name="phone" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="+90 5XX XXX XX XX" value="+90 " required />
+                <input name="vehicle" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Araç Marka / Model" />
+                <div class="sm:col-span-1">
+                  <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Hizmet</label>
+                  <select id="service-select" name="serviceId" class="soft-select w-full rounded-2xl px-4 py-3"></select>
+                </div>
+                <input name="amount" type="number" min="0" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Tutar" />
+                <div class="sm:col-span-1">
+                  <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Durum</label>
+                  <select name="status" class="soft-select w-full rounded-2xl px-4 py-3">
+                    <option>Sırada</option>
+                    <option>Yıkamada</option>
+                    <option>Detayda</option>
+                    <option>Cila</option>
+                    <option>Hazır</option>
+                    <option>Teslim Edildi</option>
+                  </select>
+                </div>
+                <input name="staffName" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Personel" value="${esc(state.session?.username || "")}" />
+                <textarea name="notes" rows="3" class="soft-input rounded-2xl px-4 py-3 sm:col-span-2" placeholder="Not / İşlem Detayı"></textarea>
+                <div class="sm:col-span-2 flex flex-wrap items-center gap-3">
+                  <button class="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-circle-plus mr-2"></i>Kayıt Oluştur</button>
+                  <p class="text-sm text-slate-400">Plaka yazdıkça bakım defteri otomatik güncellenir.</p>
+                </div>
+              </form>
+            </div>
+
+            <div class="space-y-6">
+              <div class="glass rise rounded-[2rem] p-5 neon-border">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Bakım Defteri</p>
+                    <h2 class="mt-1 text-xl font-semibold text-white">Plaka Geçmişi</h2>
+                  </div>
+                  <span class="rounded-full border border-slate-800 bg-slate-950/55 px-3 py-1 text-xs text-slate-300">Kronolojik</span>
+                </div>
+                <input id="history-plate-input" class="mt-4 soft-input w-full rounded-2xl px-4 py-3 uppercase" placeholder="Plaka yazın, geçmiş otomatik gelsin" />
+                <div id="history-strip" class="mt-4 space-y-3"></div>
+              </div>
+
+              <div class="glass rise rounded-[2rem] p-5 neon-border">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Canlı Skor Tablosu</p>
+                    <h2 class="mt-1 text-xl font-semibold text-white">Durum Akışı</h2>
+                  </div>
+                  <span class="rounded-full border border-slate-800 bg-slate-950/55 px-3 py-1 text-xs text-slate-300">Sürüklemeden Tek Tık</span>
+                </div>
+                <div id="live-status-board" class="mt-4"></div>
+              </div>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function renderRecordsTab() {
+      return `
+        <section class="space-y-6">
+          <div class="glass rise rounded-[2rem] p-5 neon-border">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Araç Kayıtları</p>
+                <h2 class="mt-1 text-2xl font-semibold text-white">Canlı İşlem Tablosu</h2>
+              </div>
+              <input id="records-search" class="soft-input w-full max-w-sm rounded-2xl px-4 py-3" placeholder="Plaka, müşteri, personel ara" />
+            </div>
+            <div id="records-table" class="mt-5"></div>
+          </div>
+        </section>`;
+    }
+
+    function renderQuoteTab() {
+      return `
+        <section class="space-y-6">
+          <div class="grid gap-6 xl:grid-cols-[1.05fr_.95fr]">
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Proforma Teklif</p>
+                  <h2 class="mt-1 text-2xl font-semibold text-white">A4 Uyumlu Teklif Oluştur</h2>
+                </div>
+                <span class="rounded-full border border-slate-800 bg-slate-950/55 px-3 py-1 text-xs text-slate-300">PDF + WhatsApp</span>
+              </div>
+              <form id="quote-form" class="mt-5 space-y-4">
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <input name="customerName" class="soft-input rounded-2xl px-4 py-3" placeholder="Müşteri Adı" required />
+                  <input name="phone" class="soft-input rounded-2xl px-4 py-3" placeholder="+90 5XX XXX XX XX" value="+90 " required />
+                  <input name="plate" class="soft-input rounded-2xl px-4 py-3 uppercase" placeholder="34 ABC 123" maxlength="12" required />
+                  <input name="vehicle" class="soft-input rounded-2xl px-4 py-3" placeholder="Araç / Model" />
+                  <input name="quoteDate" type="date" class="soft-input rounded-2xl px-4 py-3" value="${new Date().toISOString().slice(0, 10)}" />
+                  <input name="validUntil" type="date" class="soft-input rounded-2xl px-4 py-3" value="${new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)}" />
+                </div>
+                <div class="rounded-3xl border border-slate-800 bg-slate-950/55 p-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <p class="text-sm font-medium text-slate-200">İşlemler Tablosu</p>
+                    <button type="button" data-action="add-quote-row" class="rounded-2xl border border-slate-700 px-3 py-2 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-plus mr-2"></i>Satır Ekle</button>
+                  </div>
+                  <div id="quote-lines" class="mt-4 space-y-3"></div>
+                </div>
+                <textarea name="notes" rows="3" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="Alt bilgi / koşullar / teslim notu"></textarea>
+                <div class="flex flex-wrap items-center gap-3">
+                  <button type="submit" class="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-file-signature mr-2"></i>Teklifi Oluştur ve Önizle</button>
+                  <p class="text-sm text-slate-400">Teklif oluşturulduğunda arka planda A4 kurumsal şablon üretilir.</p>
+                </div>
+              </form>
+            </div>
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Teklif Geçmişi</p>
+                  <h2 class="mt-1 text-xl font-semibold text-white">Son Oluşturulanlar</h2>
+                </div>
+                <span class="rounded-full border border-slate-800 bg-slate-950/55 px-3 py-1 text-xs text-slate-300">Live</span>
+              </div>
+              <div id="quote-history" class="mt-4 space-y-3"></div>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function renderFinanceTab() {
+      return `
+        <section class="space-y-6">
+          <div id="finance-summary" class="grid gap-4 md:grid-cols-2 xl:grid-cols-4"></div>
+          <div class="grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Kasa Tablosu</p>
+                  <h2 class="mt-1 text-2xl font-semibold text-white">Gelir Kayıtları</h2>
+                </div>
+                <button data-action="export-records-csv" class="rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-file-csv mr-2"></i>Excel/CSV Olarak Aktar</button>
+              </div>
+              <div id="income-table" class="mt-5"></div>
+            </div>
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Gider Girişi</p>
+                  <h2 class="mt-1 text-2xl font-semibold text-white">Firma Harcamaları</h2>
+                </div>
+                <button data-action="export-expenses-csv" class="rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-file-csv mr-2"></i>Excel/CSV Olarak Aktar</button>
+              </div>
+              <form id="expense-form" class="mt-5 grid gap-4 sm:grid-cols-2">
+                <input name="title" class="soft-input rounded-2xl px-4 py-3 sm:col-span-2" placeholder="Gider açıklaması" required />
+                <input name="amount" type="number" min="0" class="soft-input rounded-2xl px-4 py-3" placeholder="Tutar" required />
+                <input name="date" type="date" class="soft-input rounded-2xl px-4 py-3" value="${new Date().toISOString().slice(0, 10)}" />
+                <textarea name="notes" rows="3" class="soft-input rounded-2xl px-4 py-3 sm:col-span-2" placeholder="Not"></textarea>
+                <button class="sm:col-span-2 rounded-2xl bg-rose-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-rose-300"><i class="fa-solid fa-receipt mr-2"></i>Gider Kaydet</button>
+              </form>
+              <div id="expense-table" class="mt-5"></div>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function renderReportsTab() {
+      return `
+        <section class="space-y-6">
+          <div class="glass rise rounded-[2rem] p-5 neon-border">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Canlı Raporlama</p>
+                <h2 class="mt-1 text-2xl font-semibold text-white">Gelir / Gider Analizi</h2>
+              </div>
+              <button data-action="export-report-csv" class="rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-file-csv mr-2"></i>Excel/CSV Olarak Aktar</button>
+            </div>
+            <div id="report-summary" class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4"></div>
+            <div class="mt-6 rounded-3xl border border-slate-800 bg-slate-950/40 p-4">
+              <canvas id="finance-chart" height="100"></canvas>
+            </div>
+            <div id="daily-report-table" class="mt-5"></div>
+          </div>
+        </section>`;
+    }
+
+    function renderRemindersTab() {
+      return `
+        <section class="space-y-6">
+          <div class="glass rise rounded-[2rem] p-5 neon-border">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Anımsatıcı Sistemi</p>
+                <h2 class="mt-1 text-2xl font-semibold text-white">Manuel Hatırlatma Ekle</h2>
+              </div>
+              <button data-action="open-reminder-modal" class="rounded-2xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-plus mr-2"></i>Yeni Hatırlatma</button>
+            </div>
+            <form id="manual-reminder-form" class="mt-5 grid gap-4 sm:grid-cols-2">
+              <input name="customerName" class="soft-input rounded-2xl px-4 py-3" placeholder="Müşteri Adı" required />
+              <input name="phone" class="soft-input rounded-2xl px-4 py-3" placeholder="+90 5XX XXX XX XX" value="+90 " required />
+              <input name="plate" class="soft-input rounded-2xl px-4 py-3 uppercase" placeholder="Plaka" />
+              <input name="title" class="soft-input rounded-2xl px-4 py-3" placeholder="Hatırlatma Başlığı (örn: Yıkama Hatırlatması)" required />
+              <div class="sm:col-span-2">
+                <textarea name="description" rows="2" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="Hatırlatma mesajı içeriği..."></textarea>
+              </div>
+              <input name="reminderDate" type="date" class="soft-input rounded-2xl px-4 py-3" required />
+              <input name="reminderTime" type="time" class="soft-input rounded-2xl px-4 py-3" required />
+              <div class="sm:col-span-2 flex gap-3">
+                <button type="submit" class="rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300"><i class="fa-solid fa-bell mr-2"></i>Hatırlatma Ekle</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="glass rise rounded-[2rem] p-5 neon-border">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Tüm Hatırlatmalar</p>
+                <h2 class="mt-1 text-xl font-semibold text-white">Bekleyen ve Gönderilenler</h2>
+              </div>
+              <div class="flex gap-2">
+                <button data-action="filter-reminders" data-filter="all" class="rounded-xl border border-slate-700 px-3 py-1 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200">Tümü</button>
+                <button data-action="filter-reminders" data-filter="pending" class="rounded-xl border border-slate-700 px-3 py-1 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200">Bekleyen</button>
+                <button data-action="filter-reminders" data-filter="sent" class="rounded-xl border border-slate-700 px-3 py-1 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200">Gönderilen</button>
+              </div>
+            </div>
+            <div id="all-reminders-list" class="mt-5 space-y-3"></div>
+          </div>
+
+          <div class="glass rise rounded-[2rem] p-5 neon-border">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Otomatik Hatırlatmalar</p>
+                <h2 class="mt-1 text-xl font-semibold text-white">Sistem Tarafından Oluşturulanlar</h2>
+              </div>
+            </div>
+            <div id="auto-reminders-list" class="mt-5 space-y-3"></div>
+          </div>
+        </section>`;
+    }
+
+    function renderUsersTab() {
+      return `
+        <section class="space-y-6">
+          <div class="grid gap-6 xl:grid-cols-[.95fr_1.05fr]">
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Kullanıcı Yönetimi</p>
+                <h2 class="mt-1 text-2xl font-semibold text-white">Yeni Kullanıcı Ekle</h2>
+              </div>
+              <form id="user-form" class="mt-5 grid gap-4 sm:grid-cols-2">
+                <input name="username" class="soft-input rounded-2xl px-4 py-3" placeholder="Kullanıcı adı" required />
+                <input name="password" class="soft-input rounded-2xl px-4 py-3" placeholder="Şifre" required />
+                <select name="role" class="soft-select rounded-2xl px-4 py-3 sm:col-span-2">
+                  <option value="Personel">Personel</option>
+                  <option value="Yönetici">Yönetici</option>
+                </select>
+                <button type="submit" class="sm:col-span-2 rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-user-plus mr-2"></i>Kullanıcı Ekle / Kaydet</button>
+              </form>
+            </div>
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Mevcut Hesaplar</p>
+                  <h2 class="mt-1 text-2xl font-semibold text-white">Şifre Değiştir / Sil</h2>
+                </div>
+              </div>
+              <div id="users-table" class="mt-5"></div>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function renderSettingsTab() {
+      const services = serviceList();
+      return `
+        <section class="space-y-6">
+          <div class="grid gap-6 xl:grid-cols-[1fr_.9fr]">
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Firma Ayarları</p>
+                  <h2 class="mt-1 text-2xl font-semibold text-white">Marka, Logo ve Prim Ayarları</h2>
+                </div>
+              </div>
+              <form id="settings-form" class="mt-5 space-y-4">
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <input name="companyName" class="soft-input rounded-2xl px-4 py-3" value="${esc(state.settings.companyName || defaultSettings.companyName)}" placeholder="Firma adı" />
+                  <input name="subtitle" class="soft-input rounded-2xl px-4 py-3" value="${esc(state.settings.subtitle || defaultSettings.subtitle)}" placeholder="Alt başlık" />
+                  <input name="phone" class="soft-input rounded-2xl px-4 py-3" value="${esc(state.settings.phone || defaultSettings.phone)}" placeholder="Firma telefonu" />
+                  <input name="whatsappNumber" class="soft-input rounded-2xl px-4 py-3" value="${esc(state.settings.whatsappNumber || defaultSettings.whatsappNumber)}" placeholder="WhatsApp numarası" />
+                  <input name="workingHours" class="soft-input rounded-2xl px-4 py-3" value="${esc(state.settings.workingHours || defaultSettings.workingHours)}" placeholder="Çalışma saatleri" />
+                  <input name="address" class="soft-input rounded-2xl px-4 py-3" value="${esc(state.settings.address || defaultSettings.address)}" placeholder="Adres" />
+                  <input name="commissionFixed" type="number" min="0" class="soft-input rounded-2xl px-4 py-3" value="${esc(state.settings.commissionFixed ?? defaultSettings.commissionFixed)}" placeholder="Sabit prim" />
+                  <input name="commissionPercent" type="number" min="0" class="soft-input rounded-2xl px-4 py-3" value="${esc(state.settings.commissionPercent ?? defaultSettings.commissionPercent)}" placeholder="Yüzde prim" />
+                  <input id="logo-file" type="file" accept="image/*" class="soft-input rounded-2xl px-4 py-3 sm:col-span-2" />
+                </div>
+                <textarea name="footerNote" rows="3" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="Teklif alt notu / firma mesajı">${esc(state.settings.footerNote || defaultSettings.footerNote)}</textarea>
+                <div class="rounded-3xl border border-slate-800 bg-slate-950/55 p-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <p class="text-sm font-medium text-slate-200">İşlem Türleri ve Fiyatlar</p>
+                    <button type="button" data-action="add-service-row" class="rounded-2xl border border-slate-700 px-3 py-2 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-plus mr-2"></i>Yeni Satır</button>
+                  </div>
+                  <div id="settings-services" class="mt-4 space-y-3"></div>
+                </div>
+                <button class="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-floppy-disk mr-2"></i>Ayarları Kaydet</button>
+              </form>
+            </div>
+            <div class="glass rise rounded-[2rem] p-5 neon-border">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Logo Önizleme</p>
+                  <h2 class="mt-1 text-2xl font-semibold text-white">Kurumsal Kimlik</h2>
+                </div>
+              </div>
+              <div class="mt-5 rounded-[1.75rem] border border-slate-800 bg-slate-950/55 p-5">
+                <div class="flex items-center gap-4">
+                  ${renderBrandMark()}
+                  <div>
+                    <p class="text-lg font-semibold text-white">${esc(state.settings.companyName || defaultSettings.companyName)}</p>
+                    <p class="text-sm text-slate-400">${esc(state.settings.subtitle || defaultSettings.subtitle)}</p>
+                  </div>
+                </div>
+                <div class="mt-5 grid gap-3 text-sm text-slate-300">
+                  <div class="flex items-center gap-2"><i class="fa-solid fa-location-dot text-cyan-300"></i><span>${esc(state.settings.address || defaultSettings.address)}</span></div>
+                  <div class="flex items-center gap-2"><i class="fa-solid fa-phone text-cyan-300"></i><span>${esc(state.settings.phone || defaultSettings.phone)}</span></div>
+                  <div class="flex items-center gap-2"><i class="fa-brands fa-whatsapp text-emerald-300"></i><span>${esc(state.settings.whatsappNumber || defaultSettings.whatsappNumber)}</span></div>
+                </div>
+              </div>
+              <p class="mt-4 text-sm text-slate-400">Firma logonuzu yükleyin, hizmetleri ve müşteri fiyatlarını tek ekrandan düzenleyin.</p>
+            </div>
+          </div>
+        </section>`;
+    }
+
+    function renderSummaryCards() {
+      const container = document.getElementById("summary-metrics");
+      if (!container) return;
+      container.innerHTML = summaryMetricsHTML();
+    }
+
+    function updateStatusSummary() {
+      const container = document.getElementById("live-status-board");
+      if (!container) return;
+      const order = ["Sırada", "Yıkamada", "Detayda", "Cila", "Hazır", "Teslim Edildi"];
+      const byStatus = (status) => state.records.filter((r) => (r.status || "Sırada") === status);
+      container.innerHTML = `
+        <div class="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          ${order.map((status) => {
+            const items = byStatus(status).slice(0, 6);
+            return `
+              <div class="rounded-3xl border border-slate-800 bg-slate-950/55 p-4">
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="font-semibold text-white">${esc(status)}</h3>
+                  <span class="rounded-full border border-slate-800 px-2 py-0.5 text-xs text-slate-300">${items.length}</span>
+                </div>
+                <div class="mt-4 space-y-3 max-h-72 overflow-auto pr-1 scrollbar-thin">
+                  ${items.length ? items.map((r) => renderRecordMini(r)).join("") : `<div class="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-5 text-sm text-slate-400">Henüz kayıt yok.</div>`}
+                </div>
+              </div>`;
+          }).join("")}
+        </div>`;
+    }
+
+    function renderRecordMini(r) {
+      const statusTone = {
+        "Sırada": "text-sky-300 border-sky-400/20 bg-sky-400/10",
+        "Yıkamada": "text-cyan-300 border-cyan-400/20 bg-cyan-400/10",
+        "Detayda": "text-violet-300 border-violet-400/20 bg-violet-400/10",
+        "Cila": "text-amber-300 border-amber-400/20 bg-amber-400/10",
+        "Hazır": "text-emerald-300 border-emerald-400/20 bg-emerald-400/10",
+        "Teslim Edildi": "text-slate-300 border-slate-600 bg-slate-900/50"
+      }[r.status || "Sırada"] || "text-slate-300 border-slate-600 bg-slate-900/50";
+      return `
+        <div class="rounded-3xl border border-slate-800 bg-slate-950/60 p-4 ${r.status === 'Hazır' ? 'animate-[pulseSoft_2.2s_ease-in-out_infinite]' : ''}">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold text-white">${esc(r.plate || r.plaka || '-')} <span class="text-slate-400">·</span> ${esc(r.customerName || r.customer || '-')}</p>
+              <p class="mt-1 text-xs text-slate-400">${esc(r.serviceName || r.service || '-')} · ${money(r.amount)}</p>
+            </div>
+            <span class="rounded-full border px-2.5 py-1 text-[11px] ${statusTone}">${esc(r.status || 'Sırada')}</span>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2">
+            ${statusButtons(r).join("")}
+            ${r.status === 'Hazır' ? `<button data-action="open-ready-whatsapp" data-id="${esc(r.id)}" class="rounded-2xl bg-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300"><i class="fa-brands fa-whatsapp mr-1"></i>WhatsApp Teslim</button>` : ""}
+          </div>
+        </div>`;
+    }
+
+    function statusButtons(r) {
+      const order = ["Sırada", "Yıkamada", "Detayda", "Cila", "Hazır", "Teslim Edildi"];
+      const idx = order.indexOf(r.status || "Sırada");
+      const buttons = [];
+      if (idx > 0) buttons.push(`<button data-action="status-prev" data-id="${esc(r.id)}" class="rounded-2xl border border-slate-700 px-3 py-2 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-arrow-left mr-1"></i>Geri</button>`);
+      if (idx >= 0 && idx < order.length - 1) buttons.push(`<button data-action="status-next" data-id="${esc(r.id)}" class="rounded-2xl border border-slate-700 px-3 py-2 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-arrow-right mr-1"></i>İleri</button>`);
+      return buttons;
+    }
+
+    function updateMaintenanceBook() {
+      const container = document.getElementById("history-strip");
+      if (!container) return;
+      const plateInput = document.getElementById("history-plate-input") || document.getElementById("plate-input");
+      const plate = normalizePlate(plateInput?.value || state.pendingHistoryPlate || "");
+      if (!plate || plate.length < 2) {
+        container.innerHTML = `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-sm text-slate-400">Plaka yazıldığında o araca ait geçmiş işlemler burada kronolojik olarak listelenecek.</div>`;
+        return;
+      }
+      const history = recordsByPlate(plate).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      container.innerHTML = history.length ? history.map((r) => `
+        <div class="rounded-3xl border border-slate-800 bg-slate-950/60 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold text-white">${esc(formatDateTime(r.createdAt))}</p>
+              <p class="mt-1 text-sm text-slate-300">${esc(r.serviceName || r.service || '-')}</p>
+            </div>
+            <span class="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300">${esc(r.staffName || '-')}</span>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
+            <span class="rounded-full border border-slate-800 bg-slate-900/40 px-3 py-1">${esc(r.status || 'Sırada')}</span>
+            <span class="rounded-full border border-slate-800 bg-slate-900/40 px-3 py-1">${money(r.amount)}</span>
+            <span class="rounded-full border border-slate-800 bg-slate-900/40 px-3 py-1">${esc(r.phone || '-')}</span>
+          </div>
+        </div>`).join("") : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-sm text-slate-400">Bu plaka için geçmiş işlem bulunamadı.</div>`;
+    }
+
+    function updatePublicAppointments() {
+      const container = document.getElementById("public-appointments-feed");
+      if (!container) return;
+      const list = [...state.appointments].slice(0, 6);
+      const isStaff = !!state.session;
+      container.innerHTML = list.length ? list.map((a) => {
+        const name = isStaff ? esc(a.name || '-') : maskName(a.name || '-');
+        const plate = isStaff ? esc(a.plate || '-') : maskPlate(a.plate || '-');
+        const serviceName = esc(a.serviceName || '-');
+        return `
+        <div class="rounded-3xl border border-slate-800 bg-slate-950/55 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold text-white">${name}</p>
+              <p class="mt-1 text-sm text-slate-300">${plate} · ${serviceName}</p>
+            </div>
+            <span class="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300">${formatShortDate(a.createdAt)}</span>
+          </div>
+          <p class="mt-3 text-xs text-slate-400">${esc(a.requestedDate || '-')} ${esc(a.requestedTime || '')}</p>
+        </div>`}).join("") : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-sm text-slate-400">Henüz randevu yok.</div>`;
+    }
+
+    function renderRecordsTable() {
+      const container = document.getElementById("records-table");
+      if (!container) return;
+      const q = (document.getElementById("records-search")?.value || "").toLowerCase().trim();
+      const rows = state.records.filter((r) => {
+        const hay = `${r.plate || ''} ${r.customerName || ''} ${r.phone || ''} ${r.serviceName || ''} ${r.staffName || ''} ${r.status || ''}`.toLowerCase();
+        return !q || hay.includes(q);
+      });
+      const isAdmin = state.session?.role === 'Yönetici';
+      container.innerHTML = rows.length ? `
+        <div class="overflow-auto rounded-3xl border border-slate-800">
+          <table class="min-w-full divide-y divide-slate-800 text-sm">
+            <thead class="bg-slate-950/70 text-slate-300">
+              <tr>
+                <th class="px-4 py-3 text-left font-medium">Tarih</th>
+                <th class="px-4 py-3 text-left font-medium">Plaka</th>
+                <th class="px-4 py-3 text-left font-medium">Müşteri</th>
+                <th class="px-4 py-3 text-left font-medium">Hizmet</th>
+                <th class="px-4 py-3 text-left font-medium">Tutar</th>
+                <th class="px-4 py-3 text-left font-medium">Durum</th>
+                <th class="px-4 py-3 text-left font-medium">Personel</th>
+                ${isAdmin ? '<th class="px-4 py-3 text-left font-medium">İşlem</th>' : ''}
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-900 bg-slate-950/40">
+              ${rows.map((r) => `
+                <tr class="hover:bg-slate-900/40 transition">
+                  <td class="px-4 py-3 text-slate-300 cursor-pointer" data-action="show-customer-history" data-plate="${esc(r.plate || '')}">${formatDateTime(r.createdAt)}</td>
+                  <td class="px-4 py-3 font-semibold text-white cursor-pointer" data-action="show-customer-history" data-plate="${esc(r.plate || '')}">${esc(r.plate || '-')}</td>
+                  <td class="px-4 py-3 text-cyan-200 font-medium hover:underline cursor-pointer" data-action="show-customer-history" data-plate="${esc(r.plate || '')}">${esc(r.customerName || '-')} <i class="fa-solid fa-eye text-[10px] ml-1 opacity-50"></i></td>
+                  <td class="px-4 py-3 text-slate-300">${esc(r.serviceName || '-')}</td>
+                  <td class="px-4 py-3 text-cyan-200">${money(r.amount)}</td>
+                  <td class="px-4 py-3"><span class="rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-300">${esc(r.status || 'Sırada')}</span></td>
+                  <td class="px-4 py-3 text-slate-300">${esc(r.staffName || '-')}</td>
+                  ${isAdmin ? `
+                  <td class="px-4 py-3">
+                    <div class="flex gap-2">
+                      <button data-action="edit-record" data-id="${r.id}" class="rounded-xl border border-cyan-500/30 px-2 py-1 text-xs text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-400/10"><i class="fa-solid fa-pen mr-1"></i>Düzenle</button>
+                      <button data-action="delete-record" data-id="${r.id}" class="rounded-xl border border-rose-500/30 px-2 py-1 text-xs text-rose-200 transition hover:border-rose-400 hover:bg-rose-400/10"><i class="fa-solid fa-trash mr-1"></i>Sil</button>
+                    </div>
+                  </td>` : ''}
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>` : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400">Filtreye uyan kayıt bulunamadı.</div>`;
+    }
+
+    function renderAppointmentsTab() {
+      return `
+        <section class="space-y-6">
+          <div class="glass rise rounded-[2rem] p-5 neon-border">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Randevu Yönetimi</p>
+                <h2 class="mt-1 text-2xl font-semibold text-white">Tüm Randevular</h2>
+              </div>
+            </div>
+            <div id="appointments-table" class="mt-5"></div>
+          </div>
+        </section>`;
+    }
+
+    function renderAppointmentsTable() {
+      const container = document.getElementById("appointments-table");
+      if (!container) return;
+      const rows = [...state.appointments].sort((a,b) => new Date(b.requestedDate + 'T' + (a.requestedTime || '00:00')) - new Date(a.requestedDate + 'T' + (a.requestedTime || '00:00')));
+      const now = new Date();
+      container.innerHTML = rows.length ? `
+        <div class="overflow-auto rounded-3xl border border-slate-800">
+          <table class="min-w-full divide-y divide-slate-800 text-sm">
+            <thead class="bg-slate-950/70 text-slate-300">
+              <tr>
+                <th class="px-4 py-3 text-left font-medium">Tarih</th>
+                <th class="px-4 py-3 text-left font-medium">Saat</th>
+                <th class="px-4 py-3 text-left font-medium">Müşteri</th>
+                <th class="px-4 py-3 text-left font-medium">Plaka</th>
+                <th class="px-4 py-3 text-left font-medium">Hizmet</th>
+                <th class="px-4 py-3 text-left font-medium">Durum</th>
+                <th class="px-4 py-3 text-left font-medium">İşlem</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-900 bg-slate-950/40">
+              ${rows.map((r) => {
+                const apptDate = new Date(`${r.requestedDate}T${r.requestedTime || '00:00'}`);
+                const diffMs = apptDate - now;
+                const diffMins = Math.floor(diffMs / 60000);
+                const showReminder = r.status === 'Onaylandı' && diffMins > -60 && diffMins <= 1440; 
+                const reminderText = `Sayın ${r.name}, ${r.requestedDate} ${r.requestedTime} için olan randevunuz yaklaşmaktadır. İşlemlerin aksamaması adına randevu saatinden 10 dakika önce servis alanında olmanızı rica ederiz. İyi günler dileriz, ${state.settings.companyName}.`;
+                const statusColors = {
+                  'Beklemede': 'text-amber-300 border-amber-500/30 bg-amber-500/10',
+                  'Onaylandı': 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10',
+                  'Reddedildi': 'text-rose-300 border-rose-500/30 bg-rose-500/10',
+                  'İptal': 'text-slate-400 border-slate-600 bg-slate-800/50',
+                  'Tamamlandı': 'text-slate-400 border-slate-600 bg-slate-800/50'
+                }[r.status] || 'text-slate-300 border-slate-700';
+                
+                const isPending = r.status === 'Beklemede';
+                const actionButtons = isPending ? `
+                  <div class="flex gap-2">
+                    <button data-action="approve-appointment" data-id="${r.id}" class="rounded-xl border border-emerald-500/30 px-2 py-1 text-xs text-emerald-200 transition hover:border-emerald-400 hover:bg-emerald-400/10"><i class="fa-solid fa-check mr-1"></i>Onayla</button>
+                    <button data-action="reject-appointment" data-id="${r.id}" class="rounded-xl border border-rose-500/30 px-2 py-1 text-xs text-rose-200 transition hover:border-rose-400 hover:bg-rose-400/10"><i class="fa-solid fa-xmark mr-1"></i>Reddet</button>
+                  </div>
+                ` : (showReminder ? `<button data-action="send-reminder" data-phone="${esc(r.phone)}" data-text="${esc(reminderText)}" class="rounded-xl border border-emerald-500/30 px-2 py-1 text-xs text-emerald-200 transition hover:border-emerald-400 hover:bg-emerald-400/10"><i class="fa-brands fa-whatsapp mr-1"></i>Hatırlatma Gönder</button>` : '-');
+                
+                return `
+                <tr class="hover:bg-slate-900/40 transition">
+                  <td class="px-4 py-3 text-slate-300">${esc(r.requestedDate)}</td>
+                  <td class="px-4 py-3 text-slate-300">${esc(r.requestedTime)}</td>
+                  <td class="px-4 py-3 text-white">${esc(r.name)}</td>
+                  <td class="px-4 py-3 text-cyan-200">${esc(r.plate)}</td>
+                  <td class="px-4 py-3 text-slate-300">${esc(r.serviceName)}</td>
+                  <td class="px-4 py-3"><span class="rounded-full border px-2.5 py-1 text-xs ${statusColors}">${esc(r.status)}</span></td>
+                  <td class="px-4 py-3">
+                    ${actionButtons}
+                  </td>
+                </tr>`}).join("")}
+            </tbody>
+          </table>
+        </div>` : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400">Randevu bulunamadı.</div>`;
+    }
+
+    function renderFinanceTables() {
+      const container = document.getElementById("income-table");
+      if (!container) return;
+      const rows = [...state.records].slice(0, 15);
+      container.innerHTML = rows.length ? `
+        <div class="overflow-auto rounded-3xl border border-slate-800">
+          <table class="min-w-full divide-y divide-slate-800 text-sm">
+            <thead class="bg-slate-950/70 text-slate-300"><tr>
+              <th class="px-4 py-3 text-left font-medium">Tarih</th>
+              <th class="px-4 py-3 text-left font-medium">Plaka</th>
+              <th class="px-4 py-3 text-left font-medium">Hizmet</th>
+              <th class="px-4 py-3 text-left font-medium">Tutar</th>
+              <th class="px-4 py-3 text-left font-medium">Net Kâr Etkisi</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-900 bg-slate-950/40">${rows.map((r) => `
+              <tr>
+                <td class="px-4 py-3 text-slate-300">${formatDateTime(r.createdAt)}</td>
+                <td class="px-4 py-3 font-semibold text-white">${esc(r.plate || '-')}</td>
+                <td class="px-4 py-3 text-slate-300">${esc(r.serviceName || '-')}</td>
+                <td class="px-4 py-3 text-cyan-200">${money(r.amount)}</td>
+                <td class="px-4 py-3 text-emerald-200">${money(Number(r.amount || 0) - Number((state.settings.commissionFixed || 0) + (Number(r.amount || 0) * (Number(state.settings.commissionPercent || 0) / 100))))}</td>
+              </tr>`).join("")}</tbody>
+          </table>
+        </div>` : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400">Gelir kaydı yok.</div>`;
+      const summary = document.getElementById("finance-summary");
+      if (summary) summary.innerHTML = [
+        ["Toplam Ciro", money(revenueTotal()), "fa-sack-dollar"],
+        ["Toplam Gider", money(expenseTotal()), "fa-receipt"],
+        ["Net Kâr", money(netProfit()), "fa-chart-line"],
+        ["Tahmini Prim", money((revenueTotal() * (Number(state.settings.commissionPercent || 0) / 100)) + Number(state.settings.commissionFixed || 0)), "fa-coins"],
+      ].map(([label, value, icon]) => `
+        <div class="glass rise rounded-3xl border border-slate-800 p-4">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs uppercase tracking-[0.25em] text-slate-400">${esc(label)}</p>
+              <p class="mt-2 text-2xl font-semibold text-white">${esc(value)}</p>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-white/5 p-3 text-cyan-200"><i class="fa-solid ${icon}"></i></div>
+          </div>
+        </div>`).join("");
+    }
+
+    function renderExpenseList() {
+      const container = document.getElementById("expense-table");
+      if (!container) return;
+      const rows = [...state.expenses].slice(0, 20);
+      container.innerHTML = rows.length ? `
+        <div class="overflow-auto rounded-3xl border border-slate-800">
+          <table class="min-w-full divide-y divide-slate-800 text-sm">
+            <thead class="bg-slate-950/70 text-slate-300"><tr>
+              <th class="px-4 py-3 text-left font-medium">Tarih</th>
+              <th class="px-4 py-3 text-left font-medium">Başlık</th>
+              <th class="px-4 py-3 text-left font-medium">Tutar</th>
+              <th class="px-4 py-3 text-left font-medium">Not</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-900 bg-slate-950/40">${rows.map((r) => `
+              <tr>
+                <td class="px-4 py-3 text-slate-300">${formatDateTime(r.createdAt)}</td>
+                <td class="px-4 py-3 text-white">${esc(r.title || '-')}</td>
+                <td class="px-4 py-3 text-rose-200">${money(r.amount)}</td>
+                <td class="px-4 py-3 text-slate-300">${esc(r.notes || '-')}</td>
+              </tr>`).join("")}</tbody>
+          </table>
+        </div>` : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400">Gider kaydı yok.</div>`;
+    }
+
+    let financeChartInstance = null;
+
+    function renderDailyReport() {
+      const container = document.getElementById("daily-report-table");
+      if (!container) return;
+      const grouped = new Map();
+      [...state.records].forEach((r) => {
+        const day = String(r.createdAt || nowISO()).slice(0, 10);
+        if (!grouped.has(day)) grouped.set(day, { day, income: 0, count: 0 });
+        const row = grouped.get(day);
+        row.income += Number(r.amount || 0);
+        row.count += 1;
+      });
+      
+      // Prepare chart data (last 7 days)
+      const last7Days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        last7Days.push(d.toISOString().slice(0, 10));
+      }
+      
+      const incomeData = last7Days.map(day => {
+        return state.records.filter(r => String(r.createdAt || "").slice(0, 10) === day).reduce((s, r) => s + Number(r.amount || 0), 0);
+      });
+      const expenseData = last7Days.map(day => {
+        return state.expenses.filter(e => String(e.createdAt || e.date || "").slice(0, 10) === day).reduce((s, e) => s + Number(e.amount || 0), 0);
+      });
+
+      // Render Chart
+      const ctx = document.getElementById("finance-chart");
+      if (ctx) {
+        if (financeChartInstance) financeChartInstance.destroy();
+        financeChartInstance = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: last7Days.map(d => d.slice(5)), // MM-DD
+            datasets: [
+              { label: 'Gelir', data: incomeData, backgroundColor: '#22d3ee', borderRadius: 4 },
+              { label: 'Gider', data: expenseData, backgroundColor: '#f43f5e', borderRadius: 4 }
+            ]
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: '#cbd5e1' } } },
+            scales: {
+              y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+              x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+            }
+          }
+        });
+      }
+
+      const rows = Array.from(grouped.values()).sort((a, b) => b.day.localeCompare(a.day)).slice(0, 12);
+      container.innerHTML = rows.length ? `
+        <div class="overflow-auto rounded-3xl border border-slate-800 mt-6">
+          <p class="px-4 py-3 text-sm font-semibold text-slate-200">Detaylı Günlük Liste</p>
+          <table class="min-w-full divide-y divide-slate-800 text-sm">
+            <thead class="bg-slate-950/70 text-slate-300"><tr>
+              <th class="px-4 py-3 text-left font-medium">Gün</th>
+              <th class="px-4 py-3 text-left font-medium">Kayıt</th>
+              <th class="px-4 py-3 text-left font-medium">Ciro</th>
+              <th class="px-4 py-3 text-left font-medium">Gider</th>
+              <th class="px-4 py-3 text-left font-medium">Net</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-900 bg-slate-950/40">${rows.map((r) => {
+              const dayExpenses = state.expenses.filter((e) => String(e.createdAt || e.date || "").slice(0, 10) === r.day).reduce((s, e) => s + Number(e.amount || 0), 0);
+              return `<tr>
+                <td class="px-4 py-3 text-white">${esc(r.day)}</td>
+                <td class="px-4 py-3 text-slate-300">${r.count}</td>
+                <td class="px-4 py-3 text-cyan-200">${money(r.income)}</td>
+                <td class="px-4 py-3 text-rose-200">${money(dayExpenses)}</td>
+                <td class="px-4 py-3 text-emerald-200">${money(r.income - dayExpenses)}</td>
+              </tr>`;
+            }).join("")}</tbody>
+          </table>
+        </div>` : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400 mt-6">Rapor oluşturmak için kayıt gerekli.</div>`;
+      const summary = document.getElementById("report-summary");
+      if (summary) summary.innerHTML = [
+        ["Kayıt Sayısı", String(state.records.length), "fa-clipboard-list"],
+        ["Bugün Gelir", money(state.records.filter((r) => isToday(r.createdAt)).reduce((s, r) => s + Number(r.amount || 0), 0)), "fa-sun"],
+        ["Bugün Gider", money(state.expenses.filter((e) => isToday(e.createdAt || e.date)).reduce((s, e) => s + Number(e.amount || 0), 0)), "fa-triangle-exclamation"],
+        ["Hazır Araç", String(state.records.filter((r) => (r.status || "Sırada") === "Hazır").length), "fa-car-side"],
+      ].map(([label, value, icon]) => `
+        <div class="glass rise rounded-3xl border border-slate-800 p-4">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs uppercase tracking-[0.25em] text-slate-400">${esc(label)}</p>
+              <p class="mt-2 text-2xl font-semibold text-white">${esc(value)}</p>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-white/5 p-3 text-cyan-200"><i class="fa-solid ${icon}"></i></div>
+          </div>
+        </div>`).join("");
+    }
+
+    function renderReminderList() {
+      const container = document.getElementById("auto-reminders-list");
+      if (!container) return;
+      const items = dueCandidates();
+      container.innerHTML = items.length ? items.map((r) => `
+        <div class="rounded-3xl border border-slate-800 bg-slate-950/60 p-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold text-white">${esc(r.customerName || r.customer || '-')}</p>
+              <p class="mt-1 text-sm text-slate-300">${esc(r.plate || '-')} · ${esc(r.phone || '-')}</p>
+              <p class="mt-2 text-xs text-slate-400">Son ${esc(r.reminderType)} ziyareti: ${formatShortDate(r.lastDate)} · ${r.overdue} gün önce</p>
+            </div>
+            <a class="rounded-2xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300" target="_blank" href="${whatsappLink(r.phone, `Merhaba ${r.customerName || r.customer || ''}, ${state.settings.companyName || defaultSettings.companyName} olarak sizi yeniden ağırlamak isteriz. ${r.reminderType} hizmetinizin üzerinden ${r.overdue} gün geçti. Size uygun bir randevu planlayabiliriz.`)}"><i class="fa-brands fa-whatsapp mr-2"></i>WhatsApp Hatırlatma</a>
+          </div>
+        </div>`).join("") : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400">Otomatik hatırlatma gereken müşteri yok.</div>`;
+    }
+
+    let currentReminderFilter = 'all';
+    function renderAllRemindersList() {
+      const container = document.getElementById("all-reminders-list");
+      if (!container) return;
+      
+      let items = [...state.reminders || []];
+      if (currentReminderFilter === 'pending') items = items.filter(r => r.status === 'Beklemede');
+      if (currentReminderFilter === 'sent') items = items.filter(r => r.status === 'Gönderildi');
+      
+      items.sort((a, b) => new Date(a.reminderDate + 'T' + (a.reminderTime || '00:00')) - new Date(b.reminderDate + 'T' + (b.reminderTime || '00:00')));
+      
+      container.innerHTML = items.length ? items.map((r) => {
+        const isOverdue = new Date(r.reminderDate + 'T' + (r.reminderTime || '00:00')) < new Date();
+        const statusColor = r.status === 'Gönderildi' ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' : 
+                          (isOverdue ? 'text-rose-300 border-rose-500/30 bg-rose-500/10' : 'text-amber-300 border-amber-500/30 bg-amber-500/10');
+        const whatsappText = `Merhaba ${r.customerName}, ${state.settings.companyName || defaultSettings.companyName} olarak hatırlatma yapıyoruz. ${r.description || r.title}`;
+        return `
+        <div class="rounded-3xl border border-slate-800 bg-slate-950/60 p-4 ${isOverdue && r.status !== 'Gönderildi' ? 'border-rose-500/30' : ''}">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <p class="font-semibold text-white">${esc(r.title)}</p>
+                <span class="rounded-full border px-2 py-0.5 text-[10px] ${statusColor}">${esc(r.status)}${isOverdue && r.status !== 'Gönderildi' ? ' (Gecikmiş)' : ''}</span>
+              </div>
+              <p class="mt-1 text-sm text-slate-300">${esc(r.customerName)} · ${esc(r.plate || '-')}</p>
+              <p class="mt-1 text-xs text-slate-400">${esc(r.phone)}</p>
+              <p class="mt-2 text-sm text-slate-300">${esc(r.description || '-')}</p>
+              <p class="mt-2 text-xs text-cyan-300"><i class="fa-regular fa-clock mr-1"></i>${formatShortDate(r.reminderDate)} ${r.reminderTime || ''}</p>
+            </div>
+            <div class="flex gap-2">
+              ${r.status !== 'Gönderildi' ? `
+                <a class="rounded-xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-400" target="_blank" href="${whatsappLink(r.phone, whatsappText)}"><i class="fa-brands fa-whatsapp mr-1"></i>Gönder</a>
+                <button data-action="mark-reminder-sent" data-id="${r.id}" class="rounded-xl border border-cyan-500/30 px-3 py-2 text-xs text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-400/10"><i class="fa-solid fa-check mr-1"></i>Gönderildi İşaretle</button>
+              ` : ''}
+              <button data-action="delete-reminder" data-id="${r.id}" class="rounded-xl border border-rose-500/30 px-3 py-2 text-xs text-rose-200 transition hover:border-rose-400 hover:bg-rose-400/10"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          </div>
+        </div>`}).join("") : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400">Henüz hatırlatma eklenmemiş.</div>`;
+    }
+
+    function renderLogsTab() {
+      return `
+        <section class="space-y-6">
+          <div class="glass rise rounded-[2rem] p-5 neon-border">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Denetim Kayıtları</p>
+                <h2 class="mt-1 text-2xl font-semibold text-white">Aktivite Logu</h2>
+              </div>
+              <button data-action="export-backup" class="rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-download mr-2"></i>Verileri Yedekle (JSON)</button>
+            </div>
+            <div id="logs-table" class="mt-5"></div>
+          </div>
+        </section>`;
+    }
+
+    function renderLogsTable(logs) {
+      const container = document.getElementById("logs-table");
+      if (!container) return;
+      container.innerHTML = logs.length ? `
+        <div class="overflow-auto rounded-3xl border border-slate-800 max-h-[600px] scrollbar-thin">
+          <table class="min-w-full divide-y divide-slate-800 text-sm">
+            <thead class="bg-slate-950/70 text-slate-300 sticky top-0">
+              <tr>
+                <th class="px-4 py-3 text-left font-medium">Tarih</th>
+                <th class="px-4 py-3 text-left font-medium">Kullanıcı</th>
+                <th class="px-4 py-3 text-left font-medium">İşlem</th>
+                <th class="px-4 py-3 text-left font-medium">Detay</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-900 bg-slate-950/40">
+              ${logs.map((l) => `
+                <tr class="hover:bg-slate-900/40 transition">
+                  <td class="px-4 py-3 text-slate-300">${formatDateTime(l.createdAt)}</td>
+                  <td class="px-4 py-3"><span class="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300">${esc(l.username)} (${esc(l.role)})</span></td>
+                  <td class="px-4 py-3 text-cyan-200 font-medium">${esc(l.action)}</td>
+                  <td class="px-4 py-3 text-slate-400 truncate max-w-xs">${esc(l.details)}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>` : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400">Henüz aktivite kaydı bulunmuyor.</div>`;
+    }
+
+    async function submitManualReminder(form) {
+      const data = new FormData(form);
+      const payload = {
+        customerName: String(data.get("customerName") || "").trim(),
+        phone: String(data.get("phone") || "").trim(),
+        plate: String(data.get("plate") || "").trim().toUpperCase(),
+        title: String(data.get("title") || "").trim(),
+        description: String(data.get("description") || "").trim(),
+        reminderDate: String(data.get("reminderDate") || ""),
+        reminderTime: String(data.get("reminderTime") || ""),
+        status: "Beklemede",
+        type: "manuel",
+        createdBy: state.session?.username || "Sistem",
+        createdAt: nowISO()
+      };
+      await addDoc(collection(db, "hatirlatmalar"), payload);
+      form.reset();
+      form.querySelector('[name="phone"]').value = "+90 ";
+      toast("Hatırlatma Eklendi", `${payload.title} - ${payload.customerName} için hatırlatma oluşturuldu.`, "green");
+      await logActivity("Hatırlatma Ekleme", `Manuel hatırlatma eklendi: ${payload.title} - ${payload.customerName}`);
+    }
+
+    async function markReminderSent(id) {
+      await updateDoc(doc(db, "hatirlatmalar", id), { 
+        status: 'Gönderildi', 
+        sentAt: nowISO(),
+        sentBy: state.session?.username || "Sistem"
+      });
+      await logActivity("Hatırlatma Gönderme", `${id} ID'li hatırlatma gönderildi olarak işaretlendi.`);
+      toast("İşaretlendi", "Hatırlatma gönderildi olarak işaretlendi.", "green");
+    }
+
+    async function deleteReminder(id) {
+      if (!confirm("Bu hatırlatmayı silmek istediğinize emin misiniz?")) return;
+      await deleteDoc(doc(db, "hatirlatmalar", id));
+      await logActivity("Hatırlatma Silme", `${id} ID'li hatırlatma silindi.`);
+      toast("Hatırlatma Silindi", "Hatırlatma başarıyla silindi.", "amber");
+    }
+
+    async function exportBackup() {
+      toast("Yedekleniyor...", "Veriler hazırlanıyor, lütfen bekleyin.", "cyan");
+      const backup = {
+        tarih: nowISO(),
+        firma: state.settings,
+        kayitlar: state.records,
+        randevular: state.appointments,
+        giderler: state.expenses,
+        teklifler: state.quotes,
+        hatirlatmalar: state.reminders,
+        kullanicilar: state.users
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `zeplin-yedek-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      toast("Yedek Tamamlandı", "Tüm veriler başarıyla indirildi.", "green");
+      await logActivity("Yedek Alma", "Sistem yedeği JSON olarak indirildi.");
+    }
+
+    function renderUsersTable() {
+      const container = document.getElementById("users-table");
+      if (!container) return;
+      const users = [...state.users];
+      const hasSeededPlaceholder = users.length === 0;
+      container.innerHTML = hasSeededPlaceholder ? `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-8 text-sm text-slate-400">Kullanıcı koleksiyonu henüz oluşmadı. İlk girişte admin/personel hesapları otomatik hazırlanır.</div>` : `
+        <div class="space-y-3">
+          ${users.map((u) => `
+            <div class="rounded-3xl border border-slate-800 bg-slate-950/60 p-4">
+              <div class="grid gap-3 md:grid-cols-[1fr_1fr_180px_auto] md:items-center">
+                <div>
+                  <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Kullanıcı</p>
+                  <p class="mt-1 text-base font-semibold text-white">${esc(u.username)}</p>
+                </div>
+                <div>
+                  <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Şifre</label>
+                  <input data-user-password="${esc(u.username)}" class="soft-input w-full rounded-2xl px-4 py-3" value="${esc(u.password || '')}" />
+                </div>
+                <div>
+                  <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Rol</label>
+                  <select data-user-role="${esc(u.username)}" class="soft-select w-full rounded-2xl px-4 py-3">
+                    <option value="Personel" ${u.role === 'Personel' ? 'selected' : ''}>Personel</option>
+                    <option value="Yönetici" ${u.role === 'Yönetici' ? 'selected' : ''}>Yönetici</option>
+                  </select>
+                </div>
+                <div class="flex gap-2 md:justify-end">
+                  <button data-action="save-user" data-id="${esc(u.username)}" class="rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">Kaydet</button>
+                  <button data-action="delete-user" data-id="${esc(u.username)}" class="rounded-2xl border border-rose-500/30 px-4 py-3 text-sm text-rose-200 transition hover:border-rose-400 hover:text-rose-100">Sil</button>
+                </div>
+              </div>
+            </div>`).join('')}
+        </div>`;
+    }
+
+    function hydrateSettingsRows() {
+      const container = document.getElementById("settings-services");
+      if (!container) return;
+      const services = serviceList();
+      container.innerHTML = services.map((s, index) => `
+        <div class="grid gap-3 rounded-3xl border border-slate-800 bg-slate-950/55 p-4 sm:grid-cols-[1.1fr_.8fr_.7fr_auto] sm:items-center" data-service-id="${esc(s.id)}">
+          <input data-service-field="name" data-index="${index}" class="soft-input rounded-2xl px-4 py-3" value="${esc(s.name)}" placeholder="Hizmet adı" />
+          <select data-service-field="category" data-index="${index}" class="soft-select rounded-2xl px-4 py-3">
+            <option value="wash" ${s.category === 'wash' ? 'selected' : ''}>Yıkama</option>
+            <option value="detail" ${s.category === 'detail' ? 'selected' : ''}>Detay</option>
+          </select>
+          <input data-service-field="price" data-index="${index}" type="number" min="0" class="soft-input rounded-2xl px-4 py-3" value="${esc(s.price)}" placeholder="Fiyat" />
+          <button type="button" data-action="remove-service-row" data-index="${index}" class="rounded-2xl border border-rose-500/30 px-4 py-3 text-sm text-rose-200 transition hover:border-rose-400 hover:text-rose-100">Sil</button>
+        </div>`).join("");
+    }
+
+    function hydrateQuoteRows() {
+      const container = document.getElementById("quote-lines");
+      if (!container) return;
+      if (!container.dataset.ready) {
+        container.dataset.ready = "1";
+        container.innerHTML = quoteLineRowHTML(0);
+        return;
+      }
+      if (!container.children.length) container.innerHTML = quoteLineRowHTML(0);
+    }
+
+    function quoteLineRowHTML(index, line = {}) {
+      const options = serviceList().map((s) => `<option value="${esc(s.id)}" ${line.serviceId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join("");
+      const service = serviceMetaById(line.serviceId || serviceList()[0]?.id);
+      return `
+        <div class="grid gap-3 rounded-3xl border border-slate-800 bg-slate-950/55 p-4 sm:grid-cols-[1.2fr_.5fr_.7fr_auto] sm:items-center quote-line" data-index="${index}">
+          <div>
+            <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">İşlem</label>
+            <select class="soft-select w-full rounded-2xl px-4 py-3" name="serviceId">${options}</select>
+          </div>
+          <div>
+            <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Adet</label>
+            <input name="qty" type="number" min="1" value="${esc(line.qty || 1)}" class="soft-input w-full rounded-2xl px-4 py-3" />
+          </div>
+          <div>
+            <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Birim Fiyat</label>
+            <input name="unitPrice" type="number" min="0" value="${esc(line.unitPrice || service?.price || 0)}" class="soft-input w-full rounded-2xl px-4 py-3" />
+          </div>
+          <button type="button" data-action="remove-quote-row" class="rounded-2xl border border-rose-500/30 px-4 py-3 text-sm text-rose-200 transition hover:border-rose-400 hover:text-rose-100">Sil</button>
+        </div>`;
+    }
+
+    function renderQuoteHistory() {
+      const container = document.getElementById("quote-history");
+      if (!container) return;
+      const rows = [...state.quotes].slice(0, 8);
+      container.innerHTML = rows.length ? rows.map((q) => `
+        <div class="rounded-3xl border border-slate-800 bg-slate-950/55 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold text-white">${esc(q.quoteNo || '-')}</p>
+              <p class="mt-1 text-sm text-slate-300">${esc(q.customerName || '-')} · ${esc(q.plate || '-')}</p>
+            </div>
+            <span class="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300">${formatShortDate(q.createdAt)}</span>
+          </div>
+          <div class="mt-3 flex items-center justify-between gap-3 text-sm">
+            <span class="text-slate-400">Toplam</span>
+            <span class="text-cyan-200">${money(q.total)}</span>
+          </div>
+        </div>`).join("") : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-sm text-slate-400">Henüz teklif oluşturulmadı.</div>`;
+    }
+
+    function setCurrentQuotePreview(quote) {
+      try {
+        console.log("setCurrentQuotePreview başlatıldı:", quote);
+        state.quoteDraft = quote;
+        const preview = document.getElementById("quote-sheet-preview");
+        if (!preview) {
+          console.error("quote-sheet-preview elementi bulunamadı!");
+          toast("Hata", "Önizleme alanı bulunamadı. Sayfayı yenileyin.", "red");
+          return;
+        }
+        console.log("Preview elementi bulundu, sheetHTML oluşturuluyor...");
+        const sheetHTML = buildProformaSheet(quote);
+        console.log("sheetHTML oluşturuldu, içerik atanıyor...");
+        preview.innerHTML = sheetHTML;
+        console.log("Teklif önizlemesi başarıyla oluşturuldu:", quote.quoteNo);
+      } catch (err) {
+        console.error("setCurrentQuotePreview Hatası:", err);
+        toast("Önizleme Hatası", "Teklif önizlemesi oluşturulurken hata: " + err.message, "red");
+      }
+    }
+
+    function buildProformaSheet(quote) {
+      try {
+        if (!quote) {
+          console.error("buildProformaSheet: quote parametresi eksik!");
+          return "<div>Teklif verisi bulunamadı</div>";
+        }
+        
+        console.log("buildProformaSheet başlatıldı:", quote.quoteNo);
+        
+        const items = quote.items || [];
+        const subTotal = items.reduce((s, i) => s + Number(i.qty || 0) * Number(i.unitPrice || 0), 0);
+        const formattedPhone = formatPhone(quote.phone || "");
+        const company = state.settings?.companyName || defaultSettings.companyName;
+        
+        console.log("Teklif HTML oluşturuluyor...");
+        
+        return `
+        <div style="background: #ffffff; color: #1e293b; padding: 32px; min-height: 100%; font-family: system-ui, -apple-system, sans-serif;">
+          <!-- Header -->
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #0ea5e9;">
+            <div>
+              <p style="color: #0ea5e9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; margin: 0;">PROFORMA TEKLİF</p>
+              <h1 style="font-size: 24px; font-weight: bold; color: #0f172a; margin: 4px 0 0 0;">${esc(company)}</h1>
+              <p style="color: #64748b; font-size: 12px; margin: 4px 0 0 0;">${esc(state.settings?.subtitle || defaultSettings.subtitle)}</p>
+            </div>
+            <div style="text-align: right; font-size: 12px; color: #475569;">
+              <p style="margin: 0;"><strong>Teklif No:</strong> ${esc(quote.quoteNo)}</p>
+              <p style="margin: 4px 0 0 0;"><strong>Tarih:</strong> ${formatShortDate(quote.createdAt)}</p>
+              <p style="margin: 4px 0 0 0;"><strong>Geçerlilik:</strong> ${formatShortDate(quote.validUntil)}</p>
+            </div>
+          </div>
+          
+          <!-- Info Grid -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+            <div style="background: #f8fafc; padding: 16px; border-radius: 8px;">
+              <p style="color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 8px 0;">Müşteri / Araç</p>
+              <p style="font-weight: 600; color: #0f172a; margin: 0; font-size: 14px;">${esc(quote.customerName)}</p>
+              <p style="color: #475569; margin: 4px 0 0 0; font-size: 12px;">${esc(formattedPhone)}</p>
+              <p style="color: #475569; margin: 4px 0 0 0; font-size: 12px;">${esc(quote.plate)} · ${esc(quote.vehicle || '-')}</p>
+            </div>
+            <div style="background: #f8fafc; padding: 16px; border-radius: 8px;">
+              <p style="color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 8px 0;">İletişim</p>
+              <p style="color: #475569; margin: 0; font-size: 12px;">${esc(state.settings?.address || defaultSettings.address)}</p>
+              <p style="color: #475569; margin: 4px 0 0 0; font-size: 12px;">${esc(state.settings?.phone || defaultSettings.phone)}</p>
+            </div>
+          </div>
+          
+          <!-- Table -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px;">
+            <thead>
+              <tr style="background: #0ea5e9; color: white;">
+                <th style="padding: 12px; text-align: left; font-weight: 600;">İşlem</th>
+                <th style="padding: 12px; text-align: center; font-weight: 600; width: 80px;">Adet</th>
+                <th style="padding: 12px; text-align: right; font-weight: 600; width: 120px;">Birim Fiyat</th>
+                <th style="padding: 12px; text-align: right; font-weight: 600; width: 120px;">Tutar</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map((i) => `<tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 12px; color: #0f172a;">${esc(i.description)}</td>
+                <td style="padding: 12px; text-align: center; color: #475569;">${esc(i.qty)}</td>
+                <td style="padding: 12px; text-align: right; color: #475569;">${money(i.unitPrice)}</td>
+                <td style="padding: 12px; text-align: right; color: #0f172a; font-weight: 600;">${money(Number(i.qty || 0) * Number(i.unitPrice || 0))}</td>
+              </tr>`).join("")}
+            </tbody>
+          </table>
+          
+          <!-- Total -->
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 24px;">
+            <div style="background: #f0f9ff; border: 2px solid #0ea5e9; padding: 16px 24px; border-radius: 8px; text-align: right;">
+              <p style="color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; margin: 0;">Toplam Tutar</p>
+              <p style="font-size: 28px; font-weight: bold; color: #0ea5e9; margin: 4px 0 0 0;">${money(subTotal)}</p>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 11px; color: #64748b; text-align: center;">
+            ${esc(quote.notes || state.settings?.footerNote || defaultSettings.footerNote)}
+          </div>
+        </div>`;
+      } catch (err) {
+        console.error("buildProformaSheet Hatası:", err);
+        return `<div style="padding: 20px; color: red;">Teklif şablonu oluşturulurken hata: ${err.message}</div>`;
+      }
+    }
+
+    function showQuoteModal(quote) {
+      setCurrentQuotePreview(quote);
+      openModal("#quote-modal");
+    }
+
+    function renderFinanceSummaryCards() {
+      renderFinanceTables();
+      renderExpenseList();
+    }
+
+    function currentVisibleTabData() {
+      const records = state.records;
+      const expenses = state.expenses;
+      const appointments = state.appointments;
+      const due = dueCandidates();
+      return { records, expenses, appointments, due };
+    }
+
+    function downloadCSV(filename, rows) {
+      if (!rows.length) {
+        toast("Kayıt bulunamadı", "Aktarılacak veri yok.", "amber");
+        return;
+      }
+      const headers = Object.keys(rows[0]);
+      const csv = [headers.join(","), ...rows.map((row) => headers.map((h) => `"${String(row[h] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    }
+
+    function exportRecordsCSV() {
+      downloadCSV("gelir-kayitlari.csv", state.records.map((r) => ({
+        tarih: formatDateTime(r.createdAt),
+        plaka: r.plate || "",
+        musteri: r.customerName || "",
+        telefon: r.phone || "",
+        hizmet: r.serviceName || "",
+        tutar: Number(r.amount || 0),
+        durum: r.status || "",
+        personel: r.staffName || "",
+      })));
+    }
+
+    function exportExpensesCSV() {
+      downloadCSV("giderler.csv", state.expenses.map((r) => ({
+        tarih: formatDateTime(r.createdAt),
+        baslik: r.title || "",
+        tutar: Number(r.amount || 0),
+        not: r.notes || "",
+      })));
+    }
+
+    function exportReportCSV() {
+      const rows = [];
+      const grouped = new Map();
+      state.records.forEach((r) => {
+        const day = String(r.createdAt || nowISO()).slice(0, 10);
+        if (!grouped.has(day)) grouped.set(day, { day, count: 0, income: 0, expense: 0 });
+        const o = grouped.get(day);
+        o.count += 1;
+        o.income += Number(r.amount || 0);
+      });
+      Array.from(grouped.values()).sort((a, b) => b.day.localeCompare(a.day)).slice(0, 30).forEach((r) => {
+        r.expense = state.expenses.filter((e) => String(e.createdAt || e.date || "").slice(0, 10) === r.day).reduce((s, e) => s + Number(e.amount || 0), 0);
+        rows.push({ gün: r.day, kayıt: r.count, ciro: r.income, gider: r.expense, net: r.income - r.expense });
+      });
+      downloadCSV("canli-rapor.csv", rows);
+    }
+
+    async function downloadQuotePdf() {
+      console.log("PDF indirme başlatıldı...", state.quoteDraft);
+      if (!state.quoteDraft) {
+        toast("Hata", "Önce teklif oluşturmalısınız.", "red");
+        return;
+      }
+      try {
+        toast("PDF Hazırlanıyor...", "Lütfen bekleyin, PDF oluşturuluyor.", "cyan");
+        const element = document.getElementById("quote-sheet-preview");
+        if (!element) {
+          toast("Hata", "Önizleme elementi bulunamadı. Teklifi tekrar oluşturun.", "red");
+          return;
+        }
+        
+        // Elementin görünür ve dolu olduğunu kontrol et
+        if (element.offsetWidth === 0 || element.offsetHeight === 0) {
+          toast("Hata", "Önizleme alanı görünür değil. Lütfen bekleyin ve tekrar deneyin.", "red");
+          return;
+        }
+        
+        if (element.innerHTML.trim() === '') {
+          toast("Hata", "Önizleme içeriği boş. Teklifi tekrar oluşturun.", "red");
+          return;
+        }
+        
+        if (typeof html2pdf === 'undefined') {
+          toast("Hata", "PDF kütüphanesi yüklenemedi. Sayfayı yenileyin.", "red");
+          return;
+        }
+        
+        // Dosya adını güvenli hale getir
+        const safeFileName = (state.quoteDraft.quoteNo || 'teklif').replace(/[^a-zA-Z0-9-_]/g, '_');
+        
+        const opt = {
+          margin: 10,
+          filename: `${safeFileName}.pdf`,
+          image: { type: "jpeg", quality: 0.95 },
+          html2canvas: { 
+            scale: 2, 
+            useCORS: true, 
+            allowTaint: true,
+            backgroundColor: "#ffffff",
+            logging: true,
+            letterRendering: true
+          },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+        };
+        
+        console.log("PDF oluşturuluyor:", safeFileName);
+        
+        // html2pdf çağrısı
+        const worker = html2pdf().set(opt).from(element);
+        await worker.save();
+        
+        console.log("PDF başarıyla indirildi");
+        toast("PDF İndirildi", `${safeFileName}.pdf başarıyla indirildi.`, "green");
+        await logActivity("PDF İndirme", `${safeFileName} numaralı teklif PDF olarak indirildi.`);
+      } catch (err) {
+        console.error("PDF Hatası:", err);
+        console.error("Hata detayı:", err.stack);
+        toast("PDF Hatası", "PDF oluşturulurken hata: " + (err.message || "Bilinmeyen hata"), "red");
+      }
+    }
+
+    async function downloadQuoteJpeg() {
+      console.log("JPEG indirme başlatıldı...", state.quoteDraft);
+      if (!state.quoteDraft) {
+        toast("Hata", "Önce teklif oluşturmalısınız.", "red");
+        return;
+      }
+      try {
+        toast("JPEG Hazırlanıyor...", "Lütfen bekleyin, görsel oluşturuluyor.", "cyan");
+        const el = document.getElementById("quote-sheet-preview");
+        if (!el) {
+          toast("Hata", "Önizleme elementi bulunamadı. Teklifi tekrar oluşturun.", "red");
+          return;
+        }
+        
+        if (el.offsetWidth === 0 || el.offsetHeight === 0) {
+          toast("Hata", "Önizleme alanı görünür değil. Lütfen bekleyin ve tekrar deneyin.", "red");
+          return;
+        }
+        
+        if (typeof html2canvas === 'undefined') {
+          toast("Hata", "Görsel kütüphanesi yüklenemedi. Sayfayı yenileyin.", "red");
+          return;
+        }
+        
+        console.log("JPEG elementi bulundu, oluşturuluyor...");
+        const canvas = await html2canvas(el, { 
+          scale: 2, 
+          useCORS: true, 
+          allowTaint: true,
+          backgroundColor: "#ffffff", 
+          logging: true,
+          letterRendering: true
+        });
+        
+        const safeFileName = (state.quoteDraft.quoteNo || 'teklif').replace(/[^a-zA-Z0-9-_]/g, '_');
+        
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            toast("JPEG oluşturulamadı", "Görsel dönüştürme başarısız.", "red");
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${safeFileName}.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          toast("JPEG İndirildi", `${safeFileName}.jpg dosyası indirildi.`, "green");
+          logActivity("JPEG İndirme", `${safeFileName} numaralı teklif JPEG olarak indirildi.`);
+        }, "image/jpeg", 0.95);
+        
+      } catch (err) {
+        console.error("JPEG Hatası:", err);
+        toast("JPEG Hatası", "Görsel oluşturulurken hata: " + (err.message || "Bilinmeyen hata"), "red");
+      }
+    }
+
+    async function shareQuoteWhatsApp() {
+      const quote = state.quoteDraft;
+      if (!quote) return;
+      const el = document.getElementById("quote-sheet-preview");
+      const desktopWhatsAppWindow = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent) ? null : window.open("about:blank", "_blank");
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+      if (!blob) {
+        toast("Paylaşım başarısız", "Görsel oluşturulamadı.", "red");
+        return;
+      }
+      const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
+      try {
+        if (isMobile && navigator.share) {
+          const file = new File([blob], `${quote.quoteNo}.jpg`, { type: "image/jpeg" });
+          await navigator.share({ title: `Teklif ${quote.quoteNo}`, text: `Teklif ${quote.quoteNo}`, files: [file] });
+          toast("Paylaşım hazır", "Görsel doğrudan paylaşım menüsüne gönderildi.", "green");
+          return;
+        }
+      } catch (err) {
+        console.warn(err);
+      }
+      try {
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([new ClipboardItem({ "image/jpeg": blob })]);
+          toast("Panoya kopyalandı", "Görsel clipboard'a alındı. WhatsApp sohbetine yapıştırabilirsiniz.", "green");
+        } else {
+          toast("Kopyalama desteği sınırlı", "Tarayıcı clipboard görsel kopyalamayı desteklemiyor.", "amber");
+        }
+      } catch (err) {
+        console.warn(err);
+        toast("Panoya kopyalanamadı", "Tarayıcı izin vermedi. Dosya indirildi.", "amber");
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${quote.quoteNo}.jpg`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1200);
+      }
+      const waUrl = whatsappLink(quote.phone, `Merhaba ${quote.customerName}, teklifiniz hazır. Teklif No: ${quote.quoteNo}. Görsel panoya kopyalandı, WhatsApp sohbetine yapıştırabilirsiniz.`);
+      if (desktopWhatsAppWindow) {
+        desktopWhatsAppWindow.location.href = waUrl;
+      } else {
+        window.open(waUrl, "_blank", "noopener,noreferrer");
+      }
+    }
+
+    function renderAll() {
+      renderShell();
+      renderSummaryCards();
+      if (state.session) renderActiveTab();
+      else {
+        updatePublicAppointments();
+        updatePublicTimeSelect(new Date().toISOString().slice(0, 10));
+      }
+      updateStatusSummary();
+      updateMaintenanceBook();
+      renderQuoteHistory();
+      renderUsersTable();
+      renderFinanceTables();
+      renderExpenseList();
+      renderDailyReport();
+      renderReminderList();
+      renderAllRemindersList();
+    }
+
+    async function submitCustomerBooking(form) {
+      const data = new FormData(form);
+      const serviceId = data.get("serviceId");
+      const service = serviceMetaById(serviceId);
+      const dateStr = String(data.get("date") || "");
+      const timeStr = String(data.get("time") || "");
+
+      // Çakışma kontrolü
+      const isBooked = state.appointments.some(
+        (a) => a.requestedDate === dateStr && a.requestedTime === timeStr && a.status !== 'İptal'
+      );
+
+      if (isBooked) {
+        const nearestSlot = findNearestAvailableSlot(dateStr, timeStr);
+        if (nearestSlot) {
+          toast("Bu Saat Dolu!", `Seçtiğiniz saat (${timeStr}) dolu. En yakın müsait saat: ${nearestSlot}. Lütfen saati değiştirin.`, "amber");
+          const timeSelect = document.getElementById("public-time-select");
+          if (timeSelect) timeSelect.value = nearestSlot;
+          return;
+        } else {
+          toast("Bu Gün Dolu!", `Seçtiğiniz tarih (${dateStr}) tamamen dolu. Lütfen başka bir tarih seçin.`, "red");
+          return;
+        }
+      }
+
+      const payload = {
+        name: String(data.get("name") || "").trim(),
+        phone: String(data.get("phone") || "").trim(),
+        plate: String(data.get("plate") || "").trim().toUpperCase(),
+        vehicle: String(data.get("vehicle") || "").trim(),
+        serviceId,
+        serviceName: service?.name || "",
+        serviceCategory: service?.category || "wash",
+        requestedDate: dateStr,
+        requestedTime: timeStr,
+        note: String(data.get("note") || "").trim(),
+        status: "Beklemede",
+        createdAt: nowISO()
+      };
+      await addDoc(collection(db, "randevular"), payload);
+      form.reset();
+      const phoneField = form.querySelector('[name="phone"]');
+      if (phoneField) phoneField.value = "+90 ";
+      updatePublicServiceSelect();
+      updatePublicTimeSelect(dateStr);
+      toast("Randevunuz Alındı!", `${payload.name}, ${dateStr} ${timeStr} için randevunuz başarıyla oluşturuldu.`, "green");
+    }
+
+    async function submitVehicleIntake(form) {
+      const data = new FormData(form);
+      const serviceId = data.get("serviceId");
+      const service = serviceMetaById(serviceId);
+      const payload = {
+        plate: String(data.get("plate") || "").trim().toUpperCase(),
+        customerName: String(data.get("customerName") || "").trim(),
+        phone: String(data.get("phone") || "").trim(),
+        vehicle: String(data.get("vehicle") || "").trim(),
+        serviceId,
+        serviceName: service?.name || "",
+        serviceCategory: service?.category || "detail",
+        amount: Number(data.get("amount") || service?.price || 0),
+        status: String(data.get("status") || "Sırada"),
+        staffName: String(data.get("staffName") || state.session?.username || "").trim(),
+        notes: String(data.get("notes") || "").trim(),
+        createdAt: nowISO(),
+        updatedAt: nowISO()
+      };
+      const docRef = await addDoc(collection(db, "kayitlar"), payload);
+      await logActivity("Araç Kabul", `${payload.plate} plakalı araç için ${payload.serviceName} kaydı oluşturuldu.`);
+      
+      const apptId = document.getElementById("appointment-selector")?.value;
+      if (apptId) {
+        await updateDoc(doc(db, "randevular", apptId), { status: 'Tamamlandı', linkedRecordId: docRef.id, updatedAt: nowISO() });
+        await logActivity("Randevu Tamamlandı", `${apptId} ID'li randevu araç kabul ile tamamlandı.`);
+        document.getElementById("appointment-selector").value = "";
+      }
+      
+      form.reset();
+      const staffField = form.querySelector('[name="staffName"]');
+      if (staffField) staffField.value = state.session?.username || "";
+      const serviceSelect = form.querySelector('[name="serviceId"]');
+      if (serviceSelect && serviceList()[0]) {
+        serviceSelect.value = serviceList()[0].id;
+        const amountField = form.querySelector('[name="amount"]');
+        if (amountField) amountField.value = serviceList()[0].price;
+      }
+      toast("Kayıt oluşturuldu", "Araç kabul kaydı canlı tabloya işlendi.", "green");
+    }
+
+    async function submitExpense(form) {
+      const data = new FormData(form);
+      const payload = {
+        title: String(data.get("title") || "").trim(),
+        amount: Number(data.get("amount") || 0),
+        date: String(data.get("date") || new Date().toISOString().slice(0, 10)),
+        notes: String(data.get("notes") || "").trim(),
+        createdAt: nowISO()
+      };
+      await addDoc(collection(db, "giderler"), payload);
+      form.reset();
+      form.querySelector('[name="date"]').value = new Date().toISOString().slice(0, 10);
+      toast("Gider kaydedildi", "Kasa tablosu güncellendi.", "green");
+    }
+
+    async function submitUser(form) {
+      const data = new FormData(form);
+      const username = String(data.get("username") || "").trim().toLowerCase();
+      const password = String(data.get("password") || "").trim();
+      const role = String(data.get("role") || "Personel");
+      if (!username || !password) return;
+      await setDoc(doc(db, "kullanicilar", username), { username, password, role, updatedAt: nowISO(), createdAt: nowISO() }, { merge: true });
+      form.reset();
+      toast("Kullanıcı kaydedildi", `${username} hesabı eklendi / güncellendi.`, "green");
+    }
+
+
+    // ============================================================
+    // WORK SCHEDULE FUNCTIONS
+    // ============================================================
+    function renderWorkScheduleModal() {
+      const today = new Date();
+      const currentMonth = today.toISOString().slice(0, 7);
+      const monthInput = document.getElementById("schedule-month");
+      if (monthInput) monthInput.value = currentMonth;
+      renderScheduleCalendar(currentMonth);
+    }
+
+    function renderScheduleCalendar(monthStr) {
+      if (!monthStr) return;
+      const [year, month] = monthStr.split("-").map(Number);
+      const firstDay = new Date(year, month - 1, 1);
+      const lastDay = new Date(year, month, 0);
+      const daysInMonth = lastDay.getDate();
+      const startDay = firstDay.getDay();
+      
+      const dayNames = ["Paz", "Ptz", "Sal", "Çar", "Per", "Cum", "Cmt"];
+      
+      let html = '<div class="grid grid-cols-7 gap-2">';
+      
+      // Day headers
+      dayNames.forEach(d => {
+        html += `<div class="text-center text-xs font-bold text-cyan-400 py-2 border-b border-slate-700">${d}</div>`;
+      });
+      
+      // Empty cells
+      for (let i = 0; i < startDay; i++) {
+        html += '<div></div>';
+      }
+      
+      // Days
+      const scheduleKey = monthStr;
+      const scheduleData = state.workSchedules[scheduleKey] || { days: {} };
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const isActive = scheduleData.days?.[dateStr];
+        const classes = `relative rounded-xl p-3 text-center cursor-pointer transition border ${
+          isActive 
+            ? 'bg-cyan-500/20 border-cyan-400' 
+            : 'border-slate-700 hover:border-slate-600 bg-slate-950/50'
+        }`;
+        
+        html += `<div class="work-schedule-cell ${isActive ? 'active' : ''}" data-date="${dateStr}" style="min-height: 70px;">
+          <div class="text-sm font-bold text-white">${day}</div>
+          ${isActive ? '<i class="fa-solid fa-check text-xs text-cyan-300 mt-1"></i>' : ''}
+        </div>`;
+      }
+      
+      html += '</div>';
+      
+      const calendar = document.getElementById("schedule-calendar");
+      if (calendar) {
+        calendar.innerHTML = html;
+        
+        // Event listeners
+        document.querySelectorAll(".work-schedule-cell").forEach(cell => {
+          cell.addEventListener("click", () => {
+            cell.classList.toggle("active");
+            updateSelectedDaysDisplay();
+          });
+        });
+      }
+      
+      updateSelectedDaysDisplay();
+    }
+
+    function updateSelectedDaysDisplay() {
+      const activeCells = document.querySelectorAll(".work-schedule-cell.active");
+      const dayNames = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
+      const selected = {};
+      
+      activeCells.forEach(cell => {
+        const date = new Date(cell.dataset.date);
+        const dayName = dayNames[date.getDay()];
+        if (!selected[dayName]) selected[dayName] = 0;
+        selected[dayName]++;
+      });
+      
+      const list = document.getElementById("selected-days-list");
+      if (list) {
+        if (activeCells.length === 0) {
+          list.innerHTML = '<span class="text-slate-500">Henüz gün seçilmedi</span>';
+        } else {
+          list.innerHTML = Object.entries(selected)
+            .map(([day, count]) => `<span class="rounded-full bg-cyan-500/30 px-3 py-1 text-xs font-semibold text-cyan-200">${day} (${count})</span>`)
+            .join("");
+        }
+      }
+    }
+
+
+    async function submitSettings(form) {
+      const data = new FormData(form);
+      const serviceRows = $$("#settings-services .grid[data-index]");
+      const services = serviceRows.map((row, index) => ({
+        id: row.dataset.serviceId || serviceList()[index]?.id || uid("service"),
+        name: String($("[data-service-field='name']", row)?.value || "").trim(),
+        category: String($("[data-service-field='category']", row)?.value || "detail"),
+        price: Number($("[data-service-field='price']", row)?.value || 0)
+      })).filter((s) => s.name);
+      const logoInput = document.getElementById("logo-file");
+      let logoDataUrl = state.settings.logoDataUrl || "";
+      if (logoInput?.files?.[0]) {
+        logoDataUrl = await fileToDataUrl(logoInput.files[0]);
+      }
+      const payload = {
+        companyName: String(data.get("companyName") || defaultSettings.companyName).trim(),
+        subtitle: String(data.get("subtitle") || defaultSettings.subtitle).trim(),
+        address: String(data.get("address") || defaultSettings.address).trim(),
+        phone: String(data.get("phone") || defaultSettings.phone).trim(),
+        whatsappNumber: String(data.get("whatsappNumber") || defaultSettings.whatsappNumber).trim(),
+        workingHours: String(data.get("workingHours") || defaultSettings.workingHours).trim(),
+        footerNote: String(data.get("footerNote") || defaultSettings.footerNote).trim(),
+        commissionFixed: Number(data.get("commissionFixed") || 0),
+        commissionPercent: Number(data.get("commissionPercent") || 0),
+        logoDataUrl,
+        services,
+        updatedAt: nowISO()
+      };
+      await setDoc(doc(db, "ayarlar", "genel"), payload, { merge: true });
+      toast("Ayarlar kaydedildi", "Firma ayarları canlı olarak güncellendi.", "green");
+    }
+
+    async function submitQuote(form) {
+      const data = new FormData(form);
+      const lineEls = $$("#quote-lines .quote-line");
+      
+      if (lineEls.length === 0) {
+        toast("Eksik Bilgi", "Lütfen en az bir işlem satırı ekleyin.", "amber");
+        return;
+      }
+      
+      const items = lineEls.map((row) => {
+        const sid = $("[name='serviceId']", row)?.value;
+        const service = serviceMetaById(sid);
+        const qty = Number($("[name='qty']", row)?.value || 1);
+        const unitPrice = Number($("[name='unitPrice']", row)?.value || service?.price || 0);
+        return { serviceId: sid, description: service?.name || "", qty, unitPrice };
+      }).filter((i) => i.description);
+      
+      if (items.length === 0) {
+        toast("Eksik Bilgi", "Lütfen geçerli bir hizmet seçin.", "amber");
+        return;
+      }
+      
+      const total = items.reduce((s, i) => s + Number(i.qty || 0) * Number(i.unitPrice || 0), 0);
+      const quote = {
+        quoteNo: `PRF-${new Date().toISOString().slice(0,10).replace(/-/g, '')}-${Date.now().toString().slice(-5)}`,
+        customerName: String(data.get("customerName") || "").trim(),
+        phone: String(data.get("phone") || "").trim(),
+        plate: String(data.get("plate") || "").trim().toUpperCase(),
+        vehicle: String(data.get("vehicle") || "").trim(),
+        quoteDate: String(data.get("quoteDate") || new Date().toISOString().slice(0, 10)),
+        validUntil: String(data.get("validUntil") || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)),
+        items,
+        total,
+        notes: String(data.get("notes") || "").trim(),
+        createdAt: nowISO()
+      };
+      
+      try {
+        await addDoc(collection(db, "teklifler"), quote);
+        console.log("Teklif Firestore'a kaydedildi:", quote.quoteNo);
+        
+        // Modalı açmadan önce önizlemeyi hazırla
+        setCurrentQuotePreview(quote);
+        console.log("Önizleme hazırlandı, modal açılıyor...");
+        
+        // Kısa bir gecikme ile modalı aç (DOM'un güncellenmesi için)
+        setTimeout(() => {
+          openModal("#quote-modal");
+          toast("Teklif Hazır", "A4 önizleme oluşturuldu. PDF veya JPEG indirebilirsiniz.", "green");
+        }, 100);
+        
+        await logActivity("Teklif Oluşturma", `${quote.quoteNo} numaralı teklif oluşturuldu.`);
+        
+        form.reset();
+        form.querySelector('[name="quoteDate"]').value = new Date().toISOString().slice(0, 10);
+        form.querySelector('[name="validUntil"]').value = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+        hydrateQuoteRows();
+      } catch (err) {
+        console.error("Teklif Hatası:", err);
+        toast("Hata", "Teklif oluşturulurken bir sorun oluştu: " + err.message, "red");
+      }
+    }
+
+    async function updateRecordStatus(id, nextStatus) {
+      await updateDoc(doc(db, "kayitlar", id), { status: nextStatus, updatedAt: nowISO() });
+      toast("Durum güncellendi", `Yeni durum: ${nextStatus}`, "green");
+    }
+
+    function nextStatus(current) {
+      const order = ["Sırada", "Yıkamada", "Detayda", "Cila", "Hazır", "Teslim Edildi"];
+      const idx = Math.max(0, order.indexOf(current || "Sırada"));
+      return order[Math.min(order.length - 1, idx + 1)];
+    }
+
+    function prevStatus(current) {
+      const order = ["Sırada", "Yıkamada", "Detayda", "Cila", "Hazır", "Teslim Edildi"];
+      const idx = Math.max(0, order.indexOf(current || "Sırada"));
+      return order[Math.max(0, idx - 1)];
+    }
+
+    async function saveUser(username) {
+      const pass = document.querySelector(`[data-user-password="${cssEscape(username)}"]`)?.value || "";
+      const role = document.querySelector(`[data-user-role="${cssEscape(username)}"]`)?.value || "Personel";
+      await setDoc(doc(db, "kullanicilar", username), { username, password: pass, role, updatedAt: nowISO() }, { merge: true });
+      toast("Kullanıcı güncellendi", `${username} hesabı kaydedildi.`, "green");
+    }
+
+    async function deleteUser(username) {
+      if (!confirm(`${username} hesabı silinsin mi?`)) return;
+      await deleteDoc(doc(db, "kullanicilar", username));
+      toast("Kullanıcı silindi", `${username} hesabı kaldırıldı.`, "amber");
+    }
+
+    async function copyImageBlobToClipboard(blob) {
+      if (!navigator.clipboard || !window.ClipboardItem) throw new Error("Clipboard image copy unsupported");
+      await navigator.clipboard.write([new ClipboardItem({ "image/jpeg": blob })]);
+    }
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function logActivity(action, details) {
+      if (!state.session) return;
+      await addDoc(collection(db, "aktiviteler"), {
+        username: state.session.username,
+        role: state.session.role,
+        action,
+        details,
+        createdAt: nowISO()
+      });
+    }
+
+    function loginUser(username, role) {
+      state.session = { username, role };
+      localStorage.setItem("zd_session", JSON.stringify(state.session));
+      state.tab = "dashboard";
+      renderAll();
+      logActivity("Giriş", `${username} (${role}) sisteme giriş yaptı.`);
+      toast("Giriş başarılı", `${username} olarak ${role} paneli açıldı.`, "green");
+    }
+
+    function logoutUser() {
+      if (state.session) logActivity("Çıkış", `${state.session.username} sistemden çıkış yaptı.`);
+      state.session = null;
+      state.tab = "dashboard";
+      localStorage.removeItem("zd_session");
+      renderAll();
+      toast("Çıkış yapıldı", "Müşteri randevu paneline dönüldü.", "cyan");
+    }
+
+    function ensureDefaultUsersIfEmpty() {
+      if (state.users.length === 0 && !localStorage.getItem("zd_seed_users") && !state.seedLock) {
+        state.seedLock = true;
+        Promise.all([
+          setDoc(doc(db, "kullanicilar", "admin"), { username: "admin", password: "7538", role: "Yönetici", createdAt: nowISO(), updatedAt: nowISO() }),
+          setDoc(doc(db, "kullanicilar", "personel"), { username: "personel", password: "7538", role: "Personel", createdAt: nowISO(), updatedAt: nowISO() })
+        ]).then(() => {
+          localStorage.setItem("zd_seed_users", "1");
+          toast("Varsayılan hesaplar hazır", "admin ve personel hesapları oluşturuldu.", "green");
+        }).catch((err) => {
+          console.warn(err);
+        }).finally(() => { state.seedLock = false; });
+      }
+    }
+
+    function setupSnapshots() {
+      onSnapshot(query(collection(db, "kullanicilar"), orderBy("username", "asc")), (snap) => {
+        state.users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        ensureDefaultUsersIfEmpty();
+        if (state.session && !state.users.some((u) => u.username === state.session.username) && state.users.length > 0) {
+          logoutUser();
+          return;
+        }
+        if (state.session) renderUsersTable();
+      }, (err) => console.warn("users snapshot", err));
+
+      onSnapshot(query(collection(db, "kayitlar"), orderBy("createdAt", "desc")), (snap) => {
+        state.records = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        renderSummaryCards();
+        updateStatusSummary();
+        updateMaintenanceBook();
+        if (state.session) {
+          if (state.tab === "dashboard") renderDashboardDataOnly();
+          if (state.tab === "records") renderRecordsTable();
+          if (state.tab === "finance") renderFinanceTables();
+          if (state.tab === "reports") renderDailyReport();
+          if (state.tab === "reminders") { renderReminderList(); renderAllRemindersList(); }
+          if (state.tab === "quote") renderQuoteHistory();
+        }
+      }, (err) => console.warn("records snapshot", err));
+
+      onSnapshot(query(collection(db, "giderler"), orderBy("createdAt", "desc")), (snap) => {
+        state.expenses = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (state.session && state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
+        if (state.session && state.tab === "reports") renderDailyReport();
+        renderSummaryCards();
+      }, (err) => console.warn("expenses snapshot", err));
+
+      onSnapshot(query(collection(db, "randevular"), orderBy("createdAt", "desc")), (snap) => {
+        const newCount = snap.docs.length;
+        state.appointments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        updatePublicAppointments();
+        if (state.session && state.lastAppointmentCount > 0 && newCount > state.lastAppointmentCount) {
+          const newAppointments = newCount - state.lastAppointmentCount;
+          state.newAppointmentCount += newAppointments;
+          toast("🔔 Yeni Randevu!", `${newAppointments} yeni randevu talebi geldi.`, "amber");
+          playNotificationSound();
+        }
+        state.lastAppointmentCount = newCount;
+        if (state.session && state.tab === "dashboard") renderDashboardDataOnly();
+        if (state.session && state.tab === "appointments") renderAppointmentsTable();
+      }, (err) => console.warn("appointments snapshot", err));
+
+      onSnapshot(query(collection(db, "teklifler"), orderBy("createdAt", "desc")), (snap) => {
+        state.quotes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (state.session && state.tab === "quote") renderQuoteHistory();
+      }, (err) => console.warn("quotes snapshot", err));
+
+      onSnapshot(query(collection(db, "aktiviteler"), orderBy("createdAt", "desc")), (snap) => {
+        state.logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (state.session && state.tab === "logs") renderLogsTable(state.logs);
+      }, (err) => console.warn("logs snapshot", err));
+
+      onSnapshot(query(collection(db, "hatirlatmalar"), orderBy("createdAt", "desc")), (snap) => {
+        state.reminders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (state.session && state.tab === "reminders") {
+          renderReminderList();
+          renderAllRemindersList();
+        }
+      }, (err) => console.warn("reminders snapshot", err));
+
+      db.ref("ayarlar/genel").on("value", (snap) => {
+        state.settings = snap.exists() ? { ...defaultSettings, ...snap.data() } : { ...defaultSettings };
+        updatePublicServiceSelect();
+        updateStaffServiceSelects();
+        if (state.session && state.tab === "settings") {
+          renderAll();
+          return;
+        }
+        renderSummaryCards();
+        updatePublicAppointments();
+        updateStatusSummary();
+        if (!state.session) renderShell();
+      }, (err) => console.warn("settings snapshot", err));
+    }
+
+    function renderDashboardDataOnly() {
+      renderSummaryCards();
+      updateStatusSummary();
+      updateMaintenanceBook();
+      updatePublicAppointments();
+    }
+
+    function clearNewAppointmentBadge() {
+      if (state.newAppointmentCount > 0) {
+        state.newAppointmentCount = 0;
+        renderShell();
+      }
+    }
+
+    function attemptLogin() {
+      const username = String(document.getElementById("login-username")?.value || "").trim().toLowerCase();
+      const password = String(document.getElementById("login-password")?.value || "").trim();
+      const found = state.users.find((u) => String(u.username || "").toLowerCase() === username && String(u.password || "") === password);
+      if (found) {
+        closeModal("#login-modal");
+        loginUser(found.username, found.role || "Personel");
+        return;
+      }
+      if (state.users.length === 0 && (username === "admin" || username === "personel") && password === "7538") {
+        closeModal("#login-modal");
+        loginUser(username, username === "admin" ? "Yönetici" : "Personel");
+        return;
+      }
+      const error = document.getElementById("login-error");
+      error.textContent = "Kullanıcı adı veya şifre hatalı.";
+      error.classList.remove("hidden");
+    }
+
+    function addQuoteRow() {
+      const container = document.getElementById("quote-lines");
+      if (!container) return;
+      const index = container.children.length;
+      const div = document.createElement("div");
+      div.innerHTML = quoteLineRowHTML(index);
+      container.appendChild(div.firstElementChild);
+    }
+
+    function removeQuoteRow(btn) {
+      const row = btn.closest(".quote-line");
+      const container = document.getElementById("quote-lines");
+      if (row && container && container.children.length > 1) row.remove();
+    }
+
+    function addServiceRow() {
+      const container = document.getElementById("settings-services");
+      if (!container) return;
+      const index = container.children.length;
+      const div = document.createElement("div");
+      div.className = "grid gap-3 rounded-3xl border border-slate-800 bg-slate-950/55 p-4 sm:grid-cols-[1.1fr_.8fr_.7fr_auto] sm:items-center";
+      div.dataset.serviceId = "";
+      div.innerHTML = `
+        <input data-service-field="name" data-index="${index}" class="soft-input rounded-2xl px-4 py-3" value="" placeholder="Hizmet adı" />
+        <select data-service-field="category" data-index="${index}" class="soft-select rounded-2xl px-4 py-3">
+          <option value="wash">Yıkama</option>
+          <option value="detail">Detay</option>
+        </select>
+        <input data-service-field="price" data-index="${index}" type="number" min="0" class="soft-input rounded-2xl px-4 py-3" value="0" placeholder="Fiyat" />
+        <button type="button" data-action="remove-service-row" data-index="${index}" class="rounded-2xl border border-rose-500/30 px-4 py-3 text-sm text-rose-200 transition hover:border-rose-400 hover:text-rose-100">Sil</button>`;
+      container.appendChild(div);
+    }
+
+    function removeServiceRow(btn) {
+      const container = document.getElementById("settings-services");
+      const row = btn.closest(".grid[data-index]");
+      if (row && container && container.children.length > 1) row.remove();
+    }
+
+    function openReadyWhatsapp(id) {
+      const record = state.records.find((r) => r.id === id);
+      if (!record) return;
+      const text = `Merhaba ${record.customerName || ''}, aracınız ${state.settings.companyName || defaultSettings.companyName} tarafından hazırlandı. Plaka: ${record.plate || ''}. Teslim için uygun olduğunuzda bize ulaşabilirsiniz.`;
+      window.open(whatsappLink(record.phone, text), "_blank", "noopener,noreferrer");
+    }
+
+    function showCustomerHistory(plate) {
+      const history = recordsByPlate(plate).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const modal = document.getElementById("customer-modal");
+      const title = document.getElementById("customer-modal-title");
+      const content = document.getElementById("customer-modal-content");
+      
+      if (history.length === 0) return;
+      
+      const customer = history[0];
+      title.textContent = `${customer.customerName} - ${customer.plate} Geçmişi`;
+      
+      const totalSpent = history.reduce((s, r) => s + Number(r.amount || 0), 0);
+      
+      content.innerHTML = `
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+            <p class="text-xs text-slate-400">Toplam Ziyaret</p>
+            <p class="text-xl font-bold text-white">${history.length}</p>
+          </div>
+          <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+            <p class="text-xs text-slate-400">Toplam Harcama</p>
+            <p class="text-xl font-bold text-cyan-200">${money(totalSpent)}</p>
+          </div>
+          <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+            <p class="text-xs text-slate-400">Telefon</p>
+            <p class="text-sm font-bold text-white mt-1">${esc(customer.phone)}</p>
+          </div>
+          <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+            <p class="text-xs text-slate-400">Araç</p>
+            <p class="text-sm font-bold text-white mt-1">${esc(customer.vehicle || '-')}</p>
+          </div>
+        </div>
+        <div class="space-y-3">
+          ${history.map((r) => `
+            <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 flex flex-wrap justify-between items-center gap-4">
+              <div>
+                <p class="text-sm font-semibold text-white">${esc(r.serviceName || '-')} <span class="text-slate-500 mx-2">|</span> ${formatShortDate(r.createdAt)}</p>
+                <p class="text-xs text-slate-400 mt-1">Personel: ${esc(r.staffName || '-')}</p>
+              </div>
+              <div class="flex items-center gap-4">
+                <span class="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300">${esc(r.status || 'Sırada')}</span>
+                <span class="font-bold text-cyan-200">${money(r.amount)}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    }
+
+    function openEditRecordModal(id) {
+      const record = state.records.find(r => r.id === id);
+      if (!record) return;
+      
+      document.getElementById("edit-record-id").value = record.id;
+      document.getElementById("edit-plate").value = record.plate || '';
+      document.getElementById("edit-customerName").value = record.customerName || '';
+      document.getElementById("edit-phone").value = record.phone || '';
+      document.getElementById("edit-vehicle").value = record.vehicle || '';
+      document.getElementById("edit-amount").value = record.amount || 0;
+      document.getElementById("edit-status").value = record.status || 'Sırada';
+      document.getElementById("edit-staffName").value = record.staffName || '';
+      document.getElementById("edit-notes").value = record.notes || '';
+      
+      const serviceSelect = document.getElementById("edit-service-select");
+      serviceSelect.innerHTML = serviceList().map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+      if (record.serviceId) serviceSelect.value = record.serviceId;
+      
+      openModal("#edit-record-modal");
+    }
+
+    async function submitEditRecord(form) {
+      const data = new FormData(form);
+      const id = data.get("id");
+      const serviceId = data.get("serviceId");
+      const service = serviceMetaById(serviceId);
+      
+      const payload = {
+        plate: String(data.get("plate") || "").trim().toUpperCase(),
+        customerName: String(data.get("customerName") || "").trim(),
+        phone: String(data.get("phone") || "").trim(),
+        vehicle: String(data.get("vehicle") || "").trim(),
+        serviceId,
+        serviceName: service?.name || "",
+        serviceCategory: service?.category || "detail",
+        amount: Number(data.get("amount") || 0),
+        status: String(data.get("status") || "Sırada"),
+        staffName: String(data.get("staffName") || "").trim(),
+        notes: String(data.get("notes") || "").trim(),
+        updatedAt: nowISO()
+      };
+      
+      await updateDoc(doc(db, "kayitlar", id), payload);
+      await logActivity("Kayıt Düzenleme", `${payload.plate} plakalı araç kaydı güncellendi.`);
+      closeModal("#edit-record-modal");
+      toast("Kayıt Güncellendi", "Araç kaydı başarıyla güncellendi.", "green");
+    }
+
+    function maybeSetCurrentHistoryPlate(v) {
+      state.pendingHistoryPlate = v;
+      updateMaintenanceBook();
+    }
+
+    function handleInput(e) {
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t.id === "history-plate-input" || t.id === "plate-input") maybeSetCurrentHistoryPlate(t.value);
+      if (t.matches("#records-search")) renderRecordsTable();
+      if (t.matches("[data-user-password], [data-user-role]")) return;
+      if (t.matches("[data-service-field='name'], [data-service-field='price'], [data-service-field='category']")) return;
+      if (t.matches("[name='plate']") && document.getElementById("history-strip")) maybeSetCurrentHistoryPlate(t.value);
+
+      // Tarih seçildiğinde saat listesini güncelle
+      if (t.name === "date" && t.value) {
+        updatePublicTimeSelect(t.value);
+      }
+
+      // Plaka otomatik formatlama
+      if (t.name === "plate" && t.value) {
+        const cursorPos = t.selectionStart;
+        const oldLength = t.value.length;
+        const formatted = formatPlate(t.value);
+        if (formatted !== t.value) {
+          t.value = formatted;
+          const newLength = formatted.length;
+          const diff = newLength - oldLength;
+          t.setSelectionRange(cursorPos + diff, cursorPos + diff);
+        }
+      }
+
+      // Telefon otomatik formatlama (+90 sabit)
+      if (t.name === "phone" && t.value) {
+        const cursorPos = t.selectionStart;
+        const oldLength = t.value.length;
+        const formatted = formatPhone(t.value);
+        if (formatted !== t.value) {
+          t.value = formatted;
+          const newLength = formatted.length;
+          const diff = newLength - oldLength;
+          t.setSelectionRange(cursorPos + diff, cursorPos + diff);
+        }
+      }
+    }
+
+    function handleChange(e) {
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t.id === "service-select") {
+        const s = serviceMetaById(t.value);
+        const amountField = document.querySelector('#vehicle-intake-form [name="amount"]');
+        if (amountField && s) {
+          amountField.value = s.price;
+          toast("Tutar Güncellendi", `${s.name} için tutar otomatik olarak ${money(s.price)} olarak ayarlandı.`, "cyan");
+        }
+      }
+      if (t.id === "edit-service-select") {
+        const s = serviceMetaById(t.value);
+        const amountField = document.getElementById("edit-amount");
+        if (amountField && s) amountField.value = s.price;
+      }
+      if (t.id === "appointment-selector" && t.value) {
+        const appt = state.appointments.find(a => a.id === t.value);
+        if (appt) {
+          document.querySelector('#vehicle-intake-form [name="plate"]').value = appt.plate || '';
+          document.querySelector('#vehicle-intake-form [name="customerName"]').value = appt.name || '';
+          document.querySelector('#vehicle-intake-form [name="phone"]').value = appt.phone || '';
+          document.querySelector('#vehicle-intake-form [name="vehicle"]').value = appt.vehicle || '';
+          const serviceSelect = document.querySelector('#vehicle-intake-form [name="serviceId"]');
+          if (serviceSelect && appt.serviceId) {
+            serviceSelect.value = appt.serviceId;
+            const amountField = document.querySelector('#vehicle-intake-form [name="amount"]');
+            const s = serviceMetaById(appt.serviceId);
+            if (amountField && s) amountField.value = s.price;
+          }
+        }
+      }
+      if (t.matches("#quote-lines [name='serviceId']")) {
+        const row = t.closest('.quote-line');
+        const s = serviceMetaById(t.value);
+        if (row && s) {
+          const price = row.querySelector('[name="unitPrice"]');
+          if (price) price.value = s.price;
+        }
+      }
+    }
+
+    async function handleClick(e) {
+      const btn = e.target.closest("button, a");
+      if (!btn) return;
+      const action = btn.dataset.action || btn.id || btn.getAttribute("id");
+      
+      // Debug: Buton tıklamalarını logla
+      if (btn.id && (btn.id.includes('pdf') || btn.id.includes('jpeg') || btn.id.includes('whatsapp'))) {
+        console.log("Buton tıklandı:", btn.id, "Action:", action);
+      }
+      if (btn.id === "open-login") {
+        document.getElementById("login-error").classList.add("hidden");
+        openModal("#login-modal");
+        return;
+      }
+      if (btn.id === "close-login") { closeModal("#login-modal"); return; }
+      if (btn.id === "close-quote") { closeModal("#quote-modal"); return; }
+      if (btn.id === "close-customer-modal") { 
+        const modal = document.getElementById("customer-modal");
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        return; 
+      }
+      if (btn.id === "close-edit-record-modal" || btn.id === "cancel-edit-record") { 
+        closeModal("#edit-record-modal");
+        return; 
+      }
+            if (btn.id === "open-work-schedule") {
+        document.getElementById("schedule-month").value = new Date().toISOString().slice(0, 7);
+        renderWorkScheduleModal();
+        openModal("#work-schedule-modal");
+        return;
+      }
+      if (btn.id === "close-work-schedule" || btn.id === "cancel-work-schedule") {
+        closeModal("#work-schedule-modal");
+        return;
+      }
+      if (btn.id === "logout-btn") { logoutUser(); return; }
+      if (btn.dataset.tab) { state.tab = btn.dataset.tab; clearNewAppointmentBadge(); renderAll(); return; }
+      if (action === "export-records-csv") { exportRecordsCSV(); return; }
+      if (action === "export-expenses-csv") { exportExpensesCSV(); return; }
+      if (action === "export-report-csv") { exportReportCSV(); return; }
+      if (action === "show-customer-history") { showCustomerHistory(btn.dataset.plate); return; }
+      if (action === "approve-appointment") { await updateDoc(doc(db, "randevular", btn.dataset.id), { status: 'Onaylandı' }); await logActivity("Randevu Onaylama", `${btn.dataset.id} ID'li randevu onaylandı.`); toast("Randevu Onaylandı", "Müşteriye bilgi verilebilir.", "green"); return; }
+      if (action === "reject-appointment") { await updateDoc(doc(db, "randevular", btn.dataset.id), { status: 'Reddedildi' }); await logActivity("Randevu Reddetme", `${btn.dataset.id} ID'li randevu reddedildi.`); toast("Randevu Reddedildi", "Randevu iptal edildi.", "red"); return; }
+      if (action === "cancel-appointment") { await updateDoc(doc(db, "randevular", btn.dataset.id), { status: 'İptal' }); await logActivity("Randevu İptal", `${btn.dataset.id} ID'li randevu iptal edildi.`); toast("Randevu İptal Edildi", "Randevu iptal edildi.", "amber"); return; }
+      if (action === "delete-record") { if(!confirm("Bu kaydı silmek istediğinize emin misiniz?")) return; await deleteDoc(doc(db, "kayitlar", btn.dataset.id)); await logActivity("Kayıt Silme", `${btn.dataset.id} ID'li kayıt silindi.`); toast("Kayıt Silindi", "Kayıt başarıyla silindi.", "red"); return; }
+      if (action === "edit-record") { openEditRecordModal(btn.dataset.id); return; }
+      if (action === "send-reminder") { 
+        const phone = normalizePhone(btn.dataset.phone);
+        const text = btn.dataset.text;
+        window.open(whatsappLink(phone, text), "_blank", "noopener,noreferrer");
+        await logActivity("WhatsApp Hatırlatma", `${btn.dataset.phone} numarasına randevu hatırlatma mesajı gönderildi.`);
+        return; 
+      }
+      if (action === "status-next") { const r = state.records.find((x) => x.id === btn.dataset.id); if (r) await updateRecordStatus(r.id, nextStatus(r.status)); return; }
+      if (action === "status-prev") { const r = state.records.find((x) => x.id === btn.dataset.id); if (r) await updateRecordStatus(r.id, prevStatus(r.status)); return; }
+      if (action === "open-ready-whatsapp") { openReadyWhatsapp(btn.dataset.id); return; }
+      if (action === "save-user") { await saveUser(btn.dataset.id); return; }
+      if (action === "delete-user") { await deleteUser(btn.dataset.id); return; }
+      if (action === "add-quote-row") { addQuoteRow(); return; }
+      if (action === "remove-quote-row") { removeQuoteRow(btn); return; }
+      if (action === "add-service-row") { addServiceRow(); return; }
+      if (action === "remove-service-row") { removeServiceRow(btn); return; }
+      if (btn.id === "download-quote-pdf") { await downloadQuotePdf(); return; }
+      if (btn.id === "download-quote-jpeg") { await downloadQuoteJpeg(); return; }
+      if (btn.id === "share-quote-whatsapp") { await shareQuoteWhatsApp(); return; }
+      if (action === "export-backup") { await exportBackup(); return; }
+      if (action === "filter-reminders") { currentReminderFilter = btn.dataset.filter; renderAllRemindersList(); return; }
+      if (action === "mark-reminder-sent") { await markReminderSent(btn.dataset.id); return; }
+      if (action === "delete-reminder") { await deleteReminder(btn.dataset.id); return; }
+    }
+
+    async function handleSubmit(e) {
+      const form = e.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      e.preventDefault();
+      if (form.id === "login-form") { attemptLogin(); return; }
+      if (form.id === "customer-booking-form") { await submitCustomerBooking(form); return; }
+      if (form.id === "vehicle-intake-form") { await submitVehicleIntake(form); return; }
+      if (form.id === "expense-form") { await submitExpense(form); return; }
+      if (form.id === "user-form") { await submitUser(form); return; }
+            if (form.id === "work-schedule-form") {
+        const monthStr = document.getElementById("schedule-month").value;
+        const startTime = document.getElementById("schedule-start-time").value;
+        const endTime = document.getElementById("schedule-end-time").value;
+        const activeDays = document.querySelectorAll(".work-schedule-cell.active");
+
+        if (!monthStr) {
+          toast("Hata", "Lütfen ay seçiniz", "red");
+          return;
+        }
+
+        if (activeDays.length === 0) {
+          toast("Hata", "Lütfen en az bir gün seçiniz", "red");
+          return;
+        }
+
+        const days = {};
+        activeDays.forEach(cell => {
+          const date = cell.dataset.date;
+          days[date] = { startTime, endTime };
+        });
+
+        const scheduleData = { 
+          days, 
+          startTime,
+          endTime,
+          updated: new Date().toISOString(),
+          updatedBy: state.session?.username || 'system'
+        };
+        
+        db.ref(`calismaPlanı/${monthStr}`).set(scheduleData)
+          .then(() => {
+            console.log('✅ Çalışma planı kaydedildi:', monthStr);
+            toast("Başarılı", `${monthStr} ayı için çalışma planı kaydedildi.", "green");
+            closeModal("#work-schedule-modal");
+          })
+          .catch(err => {
+            console.error("❌ Çalışma planı kaydetme hatası:", err);
+            toast("Hata", "Plan kaydedilemedi: " + err.message, "red");
+          });
+        return;
+      }
+      if (form.id === "settings-form") { await submitSettings(form); return; }
+      if (form.id === "quote-form") { await submitQuote(form); return; }
+      if (form.id === "edit-record-form") { await submitEditRecord(form); return; }
+      if (form.id === "manual-reminder-form") { await submitManualReminder(form); return; }
+    }
+
+    document.addEventListener("click", (e) => handleClick(e));
+    document.addEventListener("input", (e) => handleInput(e));
+    document.addEventListener("change", (e) => handleChange(e));
+    document.addEventListener("submit", (e) => handleSubmit(e));
+
+    async function init() {
+      renderAll();
+      setupSnapshots();
+      if (state.session && state.users.length && !state.users.some((u) => u.username === state.session.username)) {
+        state.session = null;
+        localStorage.removeItem("zd_session");
+        renderAll();
+      }
+      if (state.session) {
+        toast("Oturum yüklendi", `${state.session.username} olarak devam ediliyor.`, "cyan");
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
