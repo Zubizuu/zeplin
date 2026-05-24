@@ -218,7 +218,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-    import { initializeFirestore, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+    import { initializeFirestore, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDZ7MbhT9_O6e3NUO9zMQ1A8igY374lxPQ",
@@ -272,7 +272,8 @@
       seedLock: false,
       newAppointmentCount: 0,
       lastAppointmentCount: 0,
-      firebaseStatus: "loading"
+      firebaseStatus: "loading",
+      firebaseLastToastErrorCode: ""
     };
 
     const moneyFmt = new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 });
@@ -726,6 +727,29 @@
       state.firebaseStatus = "error";
       state.firebaseErrorCode = err?.code || "";
       if (state.session) setFirebaseBadge("error");
+      const code = state.firebaseErrorCode || "unknown";
+      if (state.firebaseLastToastErrorCode !== code) {
+        const ruleHint = code === "permission-denied"
+          ? "Firestore kurallari okuma/yazma izni vermiyor olabilir."
+          : "Baglanti veya Firebase konfigurasyonunu kontrol edin.";
+        toast("Firebase Hatasi", `Kod: ${code}. ${ruleHint}`, "red");
+        state.firebaseLastToastErrorCode = code;
+      }
+    }
+
+    function firestoreErrorHint(code) {
+      if (code === "permission-denied") return "Firestore kurallari yazma/okuma izni vermiyor.";
+      if (code === "unavailable") return "Firebase servisine ulasilamiyor. Ag/proxy kontrol edin.";
+      if (code === "failed-precondition") return "Firestore henuz etkin degil veya index gerekiyor olabilir.";
+      if (code === "timeout") return "Istek zaman asimina ugradi.";
+      return "Baglanti veya Firebase konfigurasyonunu kontrol edin.";
+    }
+
+    function showFirestoreWriteError(context, err) {
+      const code = err?.code || "unknown";
+      markFirebaseError(err);
+      toast("Kayit Hatasi", `${context} basarisiz. Kod: ${code}. ${firestoreErrorHint(code)}`, "red");
+      console.error(`${context} hatasi`, err);
     }
 
     function updateFirebaseBadge() {
@@ -1838,7 +1862,30 @@
             <span class="text-slate-400">Toplam</span>
             <span class="text-cyan-200">${money(q.total)}</span>
           </div>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <button data-action="download-quote-history-pdf" data-id="${esc(q.id)}" class="rounded-xl bg-rose-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-400">
+              <i class="fa-solid fa-file-pdf mr-1"></i>PDF
+            </button>
+            <button data-action="download-quote-history-png" data-id="${esc(q.id)}" class="rounded-xl bg-cyan-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-cyan-400">
+              <i class="fa-solid fa-image mr-1"></i>PNG
+            </button>
+          </div>
         </div>`).join("") : `<div class="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-sm text-slate-400">Henüz teklif oluşturulmadı.</div>`;
+    }
+
+    async function downloadQuoteFromHistory(quoteId, format) {
+      const quote = state.quotes.find((q) => q.id === quoteId);
+      if (!quote) {
+        toast("Teklif bulunamadı", "Seçilen teklif kaydı bulunamadı.", "red");
+        return;
+      }
+      setCurrentQuotePreview(quote);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (format === "pdf") {
+        await downloadQuotePdf();
+        return;
+      }
+      await downloadQuoteJpeg();
     }
 
     function setCurrentQuotePreview(quote) {
@@ -1953,6 +2000,33 @@
       openModal("#quote-modal");
     }
 
+    function resolveQuoteRenderElement() {
+      const preview = document.getElementById("quote-sheet-preview");
+      const hasContent = !!preview && preview.innerHTML.trim() !== "";
+      const isVisible = !!preview && preview.offsetWidth > 0 && preview.offsetHeight > 0;
+
+      if (hasContent && isVisible) {
+        return { element: preview, cleanup: () => {} };
+      }
+
+      const mount = document.createElement("div");
+      mount.style.position = "fixed";
+      mount.style.left = "-99999px";
+      mount.style.top = "0";
+      mount.style.width = "794px";
+      mount.style.background = "#ffffff";
+      mount.style.zIndex = "-1";
+      mount.innerHTML = buildProformaSheet(state.quoteDraft);
+      document.body.appendChild(mount);
+
+      return {
+        element: mount,
+        cleanup: () => {
+          if (mount.parentNode) mount.parentNode.removeChild(mount);
+        }
+      };
+    }
+
     function renderFinanceSummaryCards() {
       renderFinanceTables();
       renderExpenseList();
@@ -2027,22 +2101,15 @@
         toast("Hata", "Önce teklif oluşturmalısınız.", "red");
         return;
       }
+      let cleanup = () => {};
       try {
         toast("PDF Hazırlanıyor...", "Lütfen bekleyin, PDF oluşturuluyor.", "cyan");
-        const element = document.getElementById("quote-sheet-preview");
-        if (!element) {
-          toast("Hata", "Önizleme elementi bulunamadı. Teklifi tekrar oluşturun.", "red");
-          return;
-        }
-        
-        // Elementin görünür ve dolu olduğunu kontrol et
-        if (element.offsetWidth === 0 || element.offsetHeight === 0) {
-          toast("Hata", "Önizleme alanı görünür değil. Lütfen bekleyin ve tekrar deneyin.", "red");
-          return;
-        }
-        
-        if (element.innerHTML.trim() === '') {
-          toast("Hata", "Önizleme içeriği boş. Teklifi tekrar oluşturun.", "red");
+        const renderTarget = resolveQuoteRenderElement();
+        const element = renderTarget.element;
+        cleanup = renderTarget.cleanup;
+
+        if (!element || String(element.innerHTML || "").trim() === "") {
+          toast("Hata", "Önizleme içeriği oluşturulamadı. Teklifi tekrar deneyin.", "red");
           return;
         }
         
@@ -2082,6 +2149,8 @@
         console.error("PDF Hatası:", err);
         console.error("Hata detayı:", err.stack);
         toast("PDF Hatası", "PDF oluşturulurken hata: " + (err.message || "Bilinmeyen hata"), "red");
+      } finally {
+        cleanup();
       }
     }
 
@@ -2091,16 +2160,15 @@
         toast("Hata", "Önce teklif oluşturmalısınız.", "red");
         return;
       }
+      let cleanup = () => {};
       try {
         toast("JPEG Hazırlanıyor...", "Lütfen bekleyin, görsel oluşturuluyor.", "cyan");
-        const el = document.getElementById("quote-sheet-preview");
-        if (!el) {
-          toast("Hata", "Önizleme elementi bulunamadı. Teklifi tekrar oluşturun.", "red");
-          return;
-        }
-        
-        if (el.offsetWidth === 0 || el.offsetHeight === 0) {
-          toast("Hata", "Önizleme alanı görünür değil. Lütfen bekleyin ve tekrar deneyin.", "red");
+        const renderTarget = resolveQuoteRenderElement();
+        const el = renderTarget.element;
+        cleanup = renderTarget.cleanup;
+
+        if (!el || String(el.innerHTML || "").trim() === "") {
+          toast("Hata", "Önizleme içeriği oluşturulamadı. Teklifi tekrar deneyin.", "red");
           return;
         }
         
@@ -2141,6 +2209,8 @@
       } catch (err) {
         console.error("JPEG Hatası:", err);
         toast("JPEG Hatası", "Görsel oluşturulurken hata: " + (err.message || "Bilinmeyen hata"), "red");
+      } finally {
+        cleanup();
       }
     }
 
@@ -2597,6 +2667,61 @@
       }, (err) => { markFirebaseError(err); console.warn("settings snapshot", err); });
     }
 
+    async function fetchCollectionOnce(colName, timeoutMs = 4000) {
+      const readPromise = getDocs(collection(db, colName));
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), timeoutMs));
+      return Promise.race([readPromise, timeoutPromise]);
+    }
+
+    async function quickFirestoreHealthCheck(timeoutMs = 4000) {
+      const readPromise = getDoc(doc(db, "ayarlar", "genel"));
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), timeoutMs));
+      await Promise.race([readPromise, timeoutPromise]);
+      markFirebaseConnected();
+    }
+
+    async function bootstrapCollectionsFallback() {
+      const jobs = [
+        { col: "kullanicilar", key: "users" },
+        { col: "kayitlar", key: "records" },
+        { col: "giderler", key: "expenses" },
+        { col: "randevular", key: "appointments" },
+        { col: "teklifler", key: "quotes" },
+        { col: "aktiviteler", key: "logs" },
+        { col: "hatirlatmalar", key: "reminders" }
+      ];
+
+      const results = await Promise.allSettled(jobs.map((job) => fetchCollectionOnce(job.col).then((snap) => ({ job, snap }))));
+      let anySuccess = false;
+      let firstError = null;
+
+      results.forEach((res) => {
+        if (res.status === "fulfilled") {
+          const { job, snap } = res.value;
+          state[job.key] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          anySuccess = true;
+          return;
+        }
+        if (!firstError) firstError = res.reason;
+      });
+
+      if (anySuccess) {
+        markFirebaseConnected();
+        renderDashboardDataOnly();
+        if (state.session) {
+          if (state.tab === "records") renderRecordsTable();
+          if (state.tab === "appointments") renderAppointmentsTable();
+          if (state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
+          if (state.tab === "quote") renderQuoteHistory();
+          if (state.tab === "logs") renderLogsTable(state.logs);
+          if (state.tab === "reminders") { renderReminderList(); renderAllRemindersList(); }
+          if (state.tab === "users") renderUsersTable();
+        }
+      } else if (firstError) {
+        markFirebaseError(firstError);
+      }
+    }
+
     function renderDashboardDataOnly() {
       renderSummaryCards();
       updateStatusSummary();
@@ -2873,6 +2998,7 @@
       if (btn.id && (btn.id.includes('pdf') || btn.id.includes('jpeg') || btn.id.includes('whatsapp'))) {
         console.log("Buton tıklandı:", btn.id, "Action:", action);
       }
+      try {
       if (btn.id === "open-login") {
         document.getElementById("login-error").classList.add("hidden");
         openModal("#login-modal");
@@ -2917,6 +3043,8 @@
       if (action === "remove-quote-row") { removeQuoteRow(btn); return; }
       if (action === "add-service-row") { addServiceRow(); return; }
       if (action === "remove-service-row") { removeServiceRow(btn); return; }
+      if (action === "download-quote-history-pdf") { await downloadQuoteFromHistory(btn.dataset.id, "pdf"); return; }
+      if (action === "download-quote-history-png") { await downloadQuoteFromHistory(btn.dataset.id, "png"); return; }
       if (btn.id === "download-quote-pdf") { await downloadQuotePdf(); return; }
       if (btn.id === "download-quote-jpeg") { await downloadQuoteJpeg(); return; }
       if (btn.id === "share-quote-whatsapp") { await shareQuoteWhatsApp(); return; }
@@ -2924,21 +3052,28 @@
       if (action === "filter-reminders") { currentReminderFilter = btn.dataset.filter; renderAllRemindersList(); return; }
       if (action === "mark-reminder-sent") { await markReminderSent(btn.dataset.id); return; }
       if (action === "delete-reminder") { await deleteReminder(btn.dataset.id); return; }
+      } catch (err) {
+        showFirestoreWriteError("Islem", err);
+      }
     }
 
     async function handleSubmit(e) {
       const form = e.target;
       if (!(form instanceof HTMLFormElement)) return;
       e.preventDefault();
-      if (form.id === "login-form") { attemptLogin(); return; }
-      if (form.id === "customer-booking-form") { await submitCustomerBooking(form); return; }
-      if (form.id === "vehicle-intake-form") { await submitVehicleIntake(form); return; }
-      if (form.id === "expense-form") { await submitExpense(form); return; }
-      if (form.id === "user-form") { await submitUser(form); return; }
-      if (form.id === "settings-form") { await submitSettings(form); return; }
-      if (form.id === "quote-form") { await submitQuote(form); return; }
-      if (form.id === "edit-record-form") { await submitEditRecord(form); return; }
-      if (form.id === "manual-reminder-form") { await submitManualReminder(form); return; }
+      try {
+        if (form.id === "login-form") { attemptLogin(); return; }
+        if (form.id === "customer-booking-form") { await submitCustomerBooking(form); return; }
+        if (form.id === "vehicle-intake-form") { await submitVehicleIntake(form); return; }
+        if (form.id === "expense-form") { await submitExpense(form); return; }
+        if (form.id === "user-form") { await submitUser(form); return; }
+        if (form.id === "settings-form") { await submitSettings(form); return; }
+        if (form.id === "quote-form") { await submitQuote(form); return; }
+        if (form.id === "edit-record-form") { await submitEditRecord(form); return; }
+        if (form.id === "manual-reminder-form") { await submitManualReminder(form); return; }
+      } catch (err) {
+        showFirestoreWriteError(form.id || "Form", err);
+      }
     }
 
     document.addEventListener("click", (e) => handleClick(e));
@@ -2949,6 +3084,12 @@
     async function init() {
       renderAll();
       setupSnapshots();
+      try {
+        await quickFirestoreHealthCheck();
+      } catch (err) {
+        console.warn("quick firestore check failed", err);
+      }
+      await bootstrapCollectionsFallback();
       setTimeout(() => {
         if (state.firebaseStatus === "loading") {
           markFirebaseError({ code: "timeout" });
