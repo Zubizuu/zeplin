@@ -810,6 +810,7 @@
     }
 
     async function createDocRobust(collectionName, payload) {
+      const NON_RETRIABLE = ["permission-denied", "failed-precondition", "not-found"];
       let lastErr = null;
       for (let i = 0; i < 2; i++) {
         try {
@@ -818,6 +819,7 @@
           return ref;
         } catch (err) {
           lastErr = err;
+          if (NON_RETRIABLE.includes(err?.code)) break; // Tekrar denemenin anlamı yok
         }
       }
 
@@ -1800,27 +1802,42 @@
         createdBy: state.session?.username || "Sistem",
         createdAt: nowISO()
       };
-      await addDoc(collection(db, "hatirlatmalar"), payload);
+      try {
+        await addDoc(collection(db, "hatirlatmalar"), payload);
+      } catch (err) {
+        showFirestoreWriteError("Hatırlatma kaydı", err);
+        return;
+      }
       form.reset();
       form.querySelector('[name="phone"]').value = "+90 ";
       toast("Hatırlatma Eklendi", `${payload.title} - ${payload.customerName} için hatırlatma oluşturuldu.`, "green");
-      await logActivity("Hatırlatma Ekleme", `Manuel hatırlatma eklendi: ${payload.title} - ${payload.customerName}`);
+      logActivity("Hatırlatma Ekleme", `Manuel hatırlatma eklendi: ${payload.title} - ${payload.customerName}`);
     }
 
     async function markReminderSent(id) {
-      await updateDoc(doc(db, "hatirlatmalar", id), { 
-        status: 'Gönderildi', 
-        sentAt: nowISO(),
-        sentBy: state.session?.username || "Sistem"
-      });
-      await logActivity("Hatırlatma Gönderme", `${id} ID'li hatırlatma gönderildi olarak işaretlendi.`);
+      try {
+        await updateDoc(doc(db, "hatirlatmalar", id), { 
+          status: 'Gönderildi', 
+          sentAt: nowISO(),
+          sentBy: state.session?.username || "Sistem"
+        });
+      } catch (err) {
+        showFirestoreWriteError("Hatırlatma güncelleme", err);
+        return;
+      }
+      logActivity("Hatırlatma Gönderme", `${id} ID'li hatırlatma gönderildi olarak işaretlendi.`);
       toast("İşaretlendi", "Hatırlatma gönderildi olarak işaretlendi.", "green");
     }
 
     async function deleteReminder(id) {
       if (!confirm("Bu hatırlatmayı silmek istediğinize emin misiniz?")) return;
-      await deleteDoc(doc(db, "hatirlatmalar", id));
-      await logActivity("Hatırlatma Silme", `${id} ID'li hatırlatma silindi.`);
+      try {
+        await deleteDoc(doc(db, "hatirlatmalar", id));
+      } catch (err) {
+        showFirestoreWriteError("Hatırlatma silme", err);
+        return;
+      }
+      logActivity("Hatırlatma Silme", `${id} ID'li hatırlatma silindi.`);
       toast("Hatırlatma Silindi", "Hatırlatma başarıyla silindi.", "amber");
     }
 
@@ -2403,7 +2420,12 @@
         status: "Beklemede",
         createdAt: nowISO()
       };
-      await addDoc(collection(db, "randevular"), payload);
+      try {
+        await addDoc(collection(db, "randevular"), payload);
+      } catch (err) {
+        showFirestoreWriteError("Randevu kaydı", err);
+        return;
+      }
       form.reset();
       const phoneField = form.querySelector('[name="phone"]');
       if (phoneField) phoneField.value = "+90 ";
@@ -2431,16 +2453,14 @@
         createdAt: nowISO(),
         updatedAt: nowISO()
       };
-      const docRef = await addDoc(collection(db, "kayitlar"), payload);
-      await logActivity("Araç Kabul", `${payload.plate} plakalı araç için ${payload.serviceName} kaydı oluşturuldu.`);
-      
-      const apptId = document.getElementById("appointment-selector")?.value;
-      if (apptId) {
-        await updateDoc(doc(db, "randevular", apptId), { status: 'Tamamlandı', linkedRecordId: docRef.id, updatedAt: nowISO() });
-        await logActivity("Randevu Tamamlandı", `${apptId} ID'li randevu araç kabul ile tamamlandı.`);
-        document.getElementById("appointment-selector").value = "";
+      let docRef;
+      try {
+        docRef = await createDocRobust("kayitlar", payload);
+      } catch (err) {
+        showFirestoreWriteError("Araç kabul kaydı", err);
+        return;
       }
-      
+
       form.reset();
       const staffField = form.querySelector('[name="staffName"]');
       if (staffField) staffField.value = state.session?.username || "";
@@ -2451,6 +2471,16 @@
         if (amountField) amountField.value = serviceList()[0].price;
       }
       toast("Kayıt oluşturuldu", "Araç kabul kaydı canlı tabloya işlendi.", "green");
+
+      // Arka plan işlemleri — başarısız olsa da kullanıcı bildirimi engellenmez
+      logActivity("Araç Kabul", `${payload.plate} plakalı araç için ${payload.serviceName} kaydı oluşturuldu.`);
+      const apptId = document.getElementById("appointment-selector")?.value;
+      if (apptId) {
+        document.getElementById("appointment-selector").value = "";
+        updateDoc(doc(db, "randevular", apptId), { status: 'Tamamlandı', linkedRecordId: docRef.id, updatedAt: nowISO() })
+          .then(() => logActivity("Randevu Tamamlandı", `${apptId} ID'li randevu araç kabul ile tamamlandı.`))
+          .catch(err => { showFirestoreWriteError("Randevu durumu güncelleme", err); });
+      }
     }
 
     async function submitExpense(form) {
@@ -2462,7 +2492,12 @@
         notes: String(data.get("notes") || "").trim(),
         createdAt: nowISO()
       };
-      await addDoc(collection(db, "giderler"), payload);
+      try {
+        await addDoc(collection(db, "giderler"), payload);
+      } catch (err) {
+        showFirestoreWriteError("Gider kaydı", err);
+        return;
+      }
       form.reset();
       form.querySelector('[name="date"]').value = new Date().toISOString().slice(0, 10);
       toast("Gider kaydedildi", "Kasa tablosu güncellendi.", "green");
@@ -2474,7 +2509,12 @@
       const password = String(data.get("password") || "").trim();
       const role = String(data.get("role") || "Personel");
       if (!username || !password) return;
-      await setDoc(doc(db, "kullanicilar", username), { username, password, role, updatedAt: nowISO(), createdAt: nowISO() }, { merge: true });
+      try {
+        await setDoc(doc(db, "kullanicilar", username), { username, password, role, updatedAt: nowISO(), createdAt: nowISO() }, { merge: true });
+      } catch (err) {
+        showFirestoreWriteError("Kullanıcı kaydı", err);
+        return;
+      }
       form.reset();
       toast("Kullanıcı kaydedildi", `${username} hesabı eklendi / güncellendi.`, "green");
     }
@@ -2507,7 +2547,12 @@
         services,
         updatedAt: nowISO()
       };
-      await setDoc(doc(db, "ayarlar", "genel"), payload, { merge: true });
+      try {
+        await setDoc(doc(db, "ayarlar", "genel"), payload, { merge: true });
+      } catch (err) {
+        showFirestoreWriteError("Ayarlar kaydı", err);
+        return;
+      }
       toast("Ayarlar kaydedildi", "Firma ayarları canlı olarak güncellendi.", "green");
     }
 
@@ -2580,7 +2625,12 @@
     }
 
     async function updateRecordStatus(id, nextStatus) {
-      await updateDoc(doc(db, "kayitlar", id), { status: nextStatus, updatedAt: nowISO() });
+      try {
+        await updateDoc(doc(db, "kayitlar", id), { status: nextStatus, updatedAt: nowISO() });
+      } catch (err) {
+        showFirestoreWriteError("Durum güncelleme", err);
+        return;
+      }
       toast("Durum güncellendi", `Yeni durum: ${nextStatus}`, "green");
     }
 
@@ -2599,13 +2649,23 @@
     async function saveUser(username) {
       const pass = document.querySelector(`[data-user-password="${cssEscape(username)}"]`)?.value || "";
       const role = document.querySelector(`[data-user-role="${cssEscape(username)}"]`)?.value || "Personel";
-      await setDoc(doc(db, "kullanicilar", username), { username, password: pass, role, updatedAt: nowISO() }, { merge: true });
+      try {
+        await setDoc(doc(db, "kullanicilar", username), { username, password: pass, role, updatedAt: nowISO() }, { merge: true });
+      } catch (err) {
+        showFirestoreWriteError("Kullanıcı güncelleme", err);
+        return;
+      }
       toast("Kullanıcı güncellendi", `${username} hesabı kaydedildi.`, "green");
     }
 
     async function deleteUser(username) {
       if (!confirm(`${username} hesabı silinsin mi?`)) return;
-      await deleteDoc(doc(db, "kullanicilar", username));
+      try {
+        await deleteDoc(doc(db, "kullanicilar", username));
+      } catch (err) {
+        showFirestoreWriteError("Kullanıcı silme", err);
+        return;
+      }
       toast("Kullanıcı silindi", `${username} hesabı kaldırıldı.`, "amber");
     }
 
@@ -2625,13 +2685,18 @@
 
     async function logActivity(action, details) {
       if (!state.session) return;
-      await addDoc(collection(db, "aktiviteler"), {
-        username: state.session.username,
-        role: state.session.role,
-        action,
-        details,
-        createdAt: nowISO()
-      });
+      try {
+        await addDoc(collection(db, "aktiviteler"), {
+          username: state.session.username,
+          role: state.session.role,
+          action,
+          details,
+          createdAt: nowISO()
+        });
+      } catch (err) {
+        // Log hatası kritik değil; sessizce yoksay
+        console.warn("logActivity failed (non-critical):", err?.code || err?.message);
+      }
     }
 
     function loginUser(username, role) {
@@ -3025,8 +3090,13 @@
         updatedAt: nowISO()
       };
       
-      await updateDoc(doc(db, "kayitlar", id), payload);
-      await logActivity("Kayıt Düzenleme", `${payload.plate} plakalı araç kaydı güncellendi.`);
+      try {
+        await updateDoc(doc(db, "kayitlar", id), payload);
+      } catch (err) {
+        showFirestoreWriteError("Kayıt güncelleme", err);
+        return;
+      }
+      logActivity("Kayıt Düzenleme", `${payload.plate} plakalı araç kaydı güncellendi.`);
       closeModal("#edit-record-modal");
       toast("Kayıt Güncellendi", "Araç kaydı başarıyla güncellendi.", "green");
     }
