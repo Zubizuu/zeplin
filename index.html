@@ -740,6 +740,7 @@
     function firestoreErrorHint(code) {
       if (code === "permission-denied") return "Firestore kurallari yazma/okuma izni vermiyor.";
       if (code === "unavailable") return "Firebase servisine ulasilamiyor. Ag/proxy kontrol edin.";
+      if (code === "network-blocked") return "Firestore endpoint'ine erisim yok. DNS, firewall, proxy veya adblock kontrol edin.";
       if (code === "failed-precondition") return "Firestore henuz etkin degil veya index gerekiyor olabilir.";
       if (code === "timeout") return "Istek zaman asimina ugradi.";
       return "Baglanti veya Firebase konfigurasyonunu kontrol edin.";
@@ -2680,6 +2681,33 @@
       markFirebaseConnected();
     }
 
+    async function firestoreRestHealthCheck(timeoutMs = 5000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const projectId = firebaseConfig.projectId;
+        const apiKey = firebaseConfig.apiKey;
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/ayarlar/genel?key=${apiKey}`;
+        const res = await fetch(url, { method: "GET", signal: controller.signal, cache: "no-store" });
+        if (res.ok) {
+          markFirebaseConnected();
+          return;
+        }
+        let body = null;
+        try { body = await res.json(); } catch {}
+        const status = body?.error?.status || "";
+        if (status === "PERMISSION_DENIED") throw { code: "permission-denied" };
+        if (status === "UNAUTHENTICATED") throw { code: "permission-denied" };
+        if (status === "UNAVAILABLE") throw { code: "unavailable" };
+        throw { code: "network-blocked" };
+      } catch (err) {
+        if (err?.name === "AbortError") throw { code: "timeout" };
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     async function bootstrapCollectionsFallback() {
       const jobs = [
         { col: "kullanicilar", key: "users" },
@@ -3088,6 +3116,12 @@
         await quickFirestoreHealthCheck();
       } catch (err) {
         console.warn("quick firestore check failed", err);
+        try {
+          await firestoreRestHealthCheck();
+        } catch (restErr) {
+          markFirebaseError(restErr);
+          console.warn("firestore REST health check failed", restErr);
+        }
       }
       await bootstrapCollectionsFallback();
       setTimeout(() => {
