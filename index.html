@@ -218,7 +218,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-    import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+    import { initializeFirestore, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDZ7MbhT9_O6e3NUO9zMQ1A8igY374lxPQ",
@@ -231,7 +231,10 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const db = initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true,
+      useFetchStreams: false
+    });
 
     const defaultSettings = {
       companyName: "Zeplin Detailing",
@@ -268,7 +271,8 @@
       pendingHistoryPlate: "",
       seedLock: false,
       newAppointmentCount: 0,
-      lastAppointmentCount: 0
+      lastAppointmentCount: 0,
+      firebaseStatus: "loading"
     };
 
     const moneyFmt = new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 });
@@ -606,7 +610,13 @@
                   <h1 class="text-sm font-semibold text-white truncate">Yönetim Paneli</h1>
                 </div>
               </div>
-              <div class="flex items-center gap-2 flex-shrink-0">${actionButton}</div>
+              <div class="flex items-center gap-2 flex-shrink-0">
+                ${actionButton}
+                <span id="firebase-badge" class="rounded-full border border-slate-700 bg-slate-800/60 px-3 h-9 flex items-center text-xs font-medium text-slate-300 gap-1 align-middle" style="height:36px;min-height:36px;">
+                  <i class="fa-brands fa-firefox-browser text-orange-400"></i>
+                  <span id="firebase-badge-text">Bağlanıyor...</span>
+                </span>
+              </div>
             </div>
           </div>
           <div class="border-t border-slate-800/50">
@@ -620,6 +630,7 @@
         </main>`;
 
       document.getElementById("shell").innerHTML = isStaff ? staffPanel : customerPanel;
+      if (isStaff) updateFirebaseBadge();
       updatePublicServiceSelect();
       if (isStaff) renderActiveTab();
       updatePublicAppointments();
@@ -678,6 +689,47 @@
       const current = select.value;
       select.innerHTML = serviceList().map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
       if (current) select.value = current;
+    }
+
+    function setFirebaseBadge(status) {
+      const badge = document.getElementById("firebase-badge");
+      const badgeText = document.getElementById("firebase-badge-text");
+      if (!badge || !badgeText) return;
+      badge.classList.remove("border-slate-700", "bg-slate-800/60", "text-slate-300", "border-green-400", "bg-green-900/60", "text-green-200", "border-rose-400", "bg-rose-900/60", "text-rose-200");
+      if (status === "ok") {
+        badgeText.textContent = "Bağlandı";
+        badge.classList.add("border-green-400", "bg-green-900/60", "text-green-200");
+        return;
+      }
+      if (status === "error") {
+        if (state.firebaseErrorCode === "permission-denied") {
+          badgeText.textContent = "Yetki Yok";
+        } else if (state.firebaseErrorCode === "timeout") {
+          badgeText.textContent = "Zaman Aşımı";
+        } else {
+          badgeText.textContent = "Bağlantı Yok";
+        }
+        badge.classList.add("border-rose-400", "bg-rose-900/60", "text-rose-200");
+        return;
+      }
+      badgeText.textContent = "Bağlanıyor...";
+      badge.classList.add("border-slate-700", "bg-slate-800/60", "text-slate-300");
+    }
+
+    function markFirebaseConnected() {
+      state.firebaseStatus = "ok";
+      state.firebaseErrorCode = "";
+      if (state.session) setFirebaseBadge("ok");
+    }
+
+    function markFirebaseError(err) {
+      state.firebaseStatus = "error";
+      state.firebaseErrorCode = err?.code || "";
+      if (state.session) setFirebaseBadge("error");
+    }
+
+    function updateFirebaseBadge() {
+      setFirebaseBadge(state.firebaseStatus);
     }
 
     function updateStaffServiceSelects() {
@@ -2458,6 +2510,7 @@
 
     function setupSnapshots() {
       onSnapshot(query(collection(db, "kullanicilar"), orderBy("username", "asc")), (snap) => {
+        markFirebaseConnected();
         state.users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         ensureDefaultUsersIfEmpty();
         if (state.session && !state.users.some((u) => u.username === state.session.username) && state.users.length > 0) {
@@ -2465,9 +2518,10 @@
           return;
         }
         if (state.session) renderUsersTable();
-      }, (err) => console.warn("users snapshot", err));
+      }, (err) => { markFirebaseError(err); console.warn("users snapshot", err); });
 
       onSnapshot(query(collection(db, "kayitlar"), orderBy("createdAt", "desc")), (snap) => {
+        markFirebaseConnected();
         state.records = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         renderSummaryCards();
         updateStatusSummary();
@@ -2480,16 +2534,18 @@
           if (state.tab === "reminders") { renderReminderList(); renderAllRemindersList(); }
           if (state.tab === "quote") renderQuoteHistory();
         }
-      }, (err) => console.warn("records snapshot", err));
+      }, (err) => { markFirebaseError(err); console.warn("records snapshot", err); });
 
       onSnapshot(query(collection(db, "giderler"), orderBy("createdAt", "desc")), (snap) => {
+        markFirebaseConnected();
         state.expenses = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         if (state.session && state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
         if (state.session && state.tab === "reports") renderDailyReport();
         renderSummaryCards();
-      }, (err) => console.warn("expenses snapshot", err));
+      }, (err) => { markFirebaseError(err); console.warn("expenses snapshot", err); });
 
       onSnapshot(query(collection(db, "randevular"), orderBy("createdAt", "desc")), (snap) => {
+        markFirebaseConnected();
         const newCount = snap.docs.length;
         state.appointments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         updatePublicAppointments();
@@ -2502,27 +2558,31 @@
         state.lastAppointmentCount = newCount;
         if (state.session && state.tab === "dashboard") renderDashboardDataOnly();
         if (state.session && state.tab === "appointments") renderAppointmentsTable();
-      }, (err) => console.warn("appointments snapshot", err));
+      }, (err) => { markFirebaseError(err); console.warn("appointments snapshot", err); });
 
       onSnapshot(query(collection(db, "teklifler"), orderBy("createdAt", "desc")), (snap) => {
+        markFirebaseConnected();
         state.quotes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         if (state.session && state.tab === "quote") renderQuoteHistory();
-      }, (err) => console.warn("quotes snapshot", err));
+      }, (err) => { markFirebaseError(err); console.warn("quotes snapshot", err); });
 
       onSnapshot(query(collection(db, "aktiviteler"), orderBy("createdAt", "desc")), (snap) => {
+        markFirebaseConnected();
         state.logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         if (state.session && state.tab === "logs") renderLogsTable(state.logs);
-      }, (err) => console.warn("logs snapshot", err));
+      }, (err) => { markFirebaseError(err); console.warn("logs snapshot", err); });
 
       onSnapshot(query(collection(db, "hatirlatmalar"), orderBy("createdAt", "desc")), (snap) => {
+        markFirebaseConnected();
         state.reminders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         if (state.session && state.tab === "reminders") {
           renderReminderList();
           renderAllRemindersList();
         }
-      }, (err) => console.warn("reminders snapshot", err));
+      }, (err) => { markFirebaseError(err); console.warn("reminders snapshot", err); });
 
       onSnapshot(doc(db, "ayarlar", "genel"), (snap) => {
+        markFirebaseConnected();
         state.settings = snap.exists() ? { ...defaultSettings, ...snap.data() } : { ...defaultSettings };
         updatePublicServiceSelect();
         updateStaffServiceSelects();
@@ -2534,7 +2594,7 @@
         updatePublicAppointments();
         updateStatusSummary();
         if (!state.session) renderShell();
-      }, (err) => console.warn("settings snapshot", err));
+      }, (err) => { markFirebaseError(err); console.warn("settings snapshot", err); });
     }
 
     function renderDashboardDataOnly() {
@@ -2889,6 +2949,12 @@
     async function init() {
       renderAll();
       setupSnapshots();
+      setTimeout(() => {
+        if (state.firebaseStatus === "loading") {
+          markFirebaseError({ code: "timeout" });
+          console.warn("Firebase bağlantı zaman aşımı: snapshot geri dönüşü alınamadı.");
+        }
+      }, 12000);
       if (state.session && state.users.length && !state.users.some((u) => u.username === state.session.username)) {
         state.session = null;
         localStorage.removeItem("zd_session");
