@@ -231,9 +231,11 @@
     };
 
     const app = initializeApp(firebaseConfig);
+    // GitHub Pages / uzak bağlantı için: useFetchStreams kaldırıldı (Fetch API daha hızlı),
+    // experimentalAutoDetectLongPolling korundu (proxy/güvenlik duvarı ortamları için fallback).
     const db = initializeFirestore(app, {
       experimentalAutoDetectLongPolling: true,
-      useFetchStreams: false
+      ignoreUndefinedProperties: true
     });
 
     const defaultSettings = {
@@ -793,7 +795,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
-      }), 6000, "timeout");
+      }), 12000, "timeout");
 
       if (!res.ok) {
         let json = null;
@@ -814,7 +816,7 @@
       let lastErr = null;
       for (let i = 0; i < 2; i++) {
         try {
-          const ref = await withTimeout(addDoc(collection(db, collectionName), payload), 5000, "timeout");
+          const ref = await withTimeout(addDoc(collection(db, collectionName), payload), 12000, "timeout");
           markFirebaseConnected();
           return ref;
         } catch (err) {
@@ -2821,20 +2823,20 @@
       }, (err) => { markFirebaseError(err); console.warn("settings snapshot", err); });
     }
 
-    async function fetchCollectionOnce(colName, timeoutMs = 4000) {
+    async function fetchCollectionOnce(colName, timeoutMs = 12000) {
       const readPromise = getDocs(collection(db, colName));
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), timeoutMs));
       return Promise.race([readPromise, timeoutPromise]);
     }
 
-    async function quickFirestoreHealthCheck(timeoutMs = 4000) {
+    async function quickFirestoreHealthCheck(timeoutMs = 12000) {
       const readPromise = getDoc(doc(db, "ayarlar", "genel"));
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), timeoutMs));
       await Promise.race([readPromise, timeoutPromise]);
       markFirebaseConnected();
     }
 
-    async function firestoreRestHealthCheck(timeoutMs = 5000) {
+    async function firestoreRestHealthCheck(timeoutMs = 12000) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -2906,9 +2908,9 @@
     async function runConnectionWarmup() {
       // En hızlı yanıt veren kontrol başarılı olursa anında "Bağlandı" durumuna geç.
       const checks = [
-        quickFirestoreHealthCheck(2500),
-        firestoreRestHealthCheck(3000),
-        fetchCollectionOnce("randevular", 2500).then(() => markFirebaseConnected())
+        quickFirestoreHealthCheck(8000),
+        firestoreRestHealthCheck(8000),
+        fetchCollectionOnce("randevular", 8000).then(() => markFirebaseConnected())
       ];
       try {
         await Promise.any(checks);
@@ -3289,12 +3291,21 @@
         markFirebaseError(err);
         console.warn("bootstrap fallback failed", err);
       });
+      // Soğuk bağlantı (TLS + WebChannel kurulumu) 5–12 sn sürebilir.
+      // İlk aşamada 8 sn sonra hafif uyarı toast'u göster ama hata durumuna geçme;
+      // 25 sn sonra gerçek timeout hatası ver.
+      setTimeout(() => {
+        if (state.firebaseStatus === "loading") {
+          toast("Bağlantı kuruluyor...", "Firebase henüz yanıt vermedi, bekleniyor.", "amber");
+          console.warn("Firebase 8s içinde yanıt vermedi, beklemeye devam ediliyor.");
+        }
+      }, 8000);
       setTimeout(() => {
         if (state.firebaseStatus === "loading") {
           markFirebaseError({ code: "timeout" });
-          console.warn("Firebase bağlantı zaman aşımı: snapshot geri dönüşü alınamadı.");
+          console.warn("Firebase bağlantı zaman aşımı (25s): snapshot geri dönüşü alınamadı.");
         }
-      }, 7000);
+      }, 25000);
       if (state.session && state.users.length && !state.users.some((u) => u.username === state.session.username)) {
         state.session = null;
         localStorage.removeItem("zd_session");
