@@ -2234,7 +2234,12 @@
             allowTaint: true,
             backgroundColor: "#ffffff",
             logging: true,
-            letterRendering: true
+            letterRendering: true,
+            onclone: (clonedDoc) => {
+              // html2canvas 1.4.1 oklch() renk fonksiyonunu desteklemiyor (Tailwind v4).
+              // Teklif sayfası tamamen inline stil kullandığından dış CSS etiketleri gereksiz.
+              clonedDoc.querySelectorAll('style').forEach(el => el.remove());
+            }
           },
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
         };
@@ -2287,7 +2292,12 @@
           allowTaint: true,
           backgroundColor: "#ffffff", 
           logging: true,
-          letterRendering: true
+          letterRendering: true,
+          onclone: (clonedDoc) => {
+            // html2canvas 1.4.1 oklch() renk fonksiyonunu desteklemiyor (Tailwind v4).
+            // Teklif sayfası tamamen inline stil kullandığından dış CSS etiketleri gereksiz.
+            clonedDoc.querySelectorAll('style').forEach(el => el.remove());
+          }
         });
         
         const safeFileName = (state.quoteDraft.quoteNo || 'teklif').replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -2322,7 +2332,7 @@
       if (!quote) return;
       const el = document.getElementById("quote-sheet-preview");
       const desktopWhatsAppWindow = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent) ? null : window.open("about:blank", "_blank");
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff", onclone: (clonedDoc) => { clonedDoc.querySelectorAll('style').forEach(el => el.remove()); } });
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
       if (!blob) {
         toast("Paylaşım başarısız", "Görsel oluşturulamadı.", "red");
