@@ -144,17 +144,9 @@
     
     <!-- Modal Footer - Sabit Alt Butonlar -->
     <div class="flex-shrink-0 border-t border-slate-800 bg-slate-950/90 px-4 py-3">
-      <div class="grid grid-cols-3 gap-2">
-        <button id="download-quote-pdf" class="rounded-xl bg-rose-500 px-2 py-3 text-xs font-semibold text-white transition hover:bg-rose-400">
-          <i class="fa-solid fa-file-pdf mb-1 block text-lg"></i>PDF İndir
-        </button>
-        <button id="download-quote-jpeg" class="rounded-xl bg-cyan-500 px-2 py-3 text-xs font-semibold text-white transition hover:bg-cyan-400">
-          <i class="fa-solid fa-image mb-1 block text-lg"></i>JPEG İndir
-        </button>
-        <button id="share-quote-whatsapp" class="rounded-xl bg-emerald-500 px-2 py-3 text-xs font-semibold text-white transition hover:bg-emerald-400">
-          <i class="fa-brands fa-whatsapp mb-1 block text-lg"></i>Paylaş
-        </button>
-      </div>
+      <button id="download-quote-jpeg" class="w-full rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-400">
+        <i class="fa-solid fa-image mr-2"></i>JPEG İndir
+      </button>
     </div>
   </div>
 
@@ -988,7 +980,10 @@
                   <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Hizmet</label>
                   <select id="service-select" name="serviceId" class="soft-select w-full rounded-2xl px-4 py-3"></select>
                 </div>
-                <input name="amount" type="number" min="0" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Tutar" />
+                <div class="sm:col-span-1">
+                  <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Tutar (₺)</label>
+                  <input name="amount" type="number" min="0" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="Tutar" />
+                </div>
                 <div class="sm:col-span-1">
                   <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Durum</label>
                   <select name="status" class="soft-select w-full rounded-2xl px-4 py-3">
@@ -1000,7 +995,10 @@
                     <option>Teslim Edildi</option>
                   </select>
                 </div>
-                <input name="staffName" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Personel" value="${esc(state.session?.username || "")}" />
+                <div class="sm:col-span-1">
+                  <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Personel</label>
+                  <input name="staffName" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="Personel" value="${esc(state.session?.username || "")}" />
+                </div>
                 <textarea name="notes" rows="3" class="soft-input rounded-2xl px-4 py-3 sm:col-span-2" placeholder="Not / İşlem Detayı"></textarea>
                 <div class="sm:col-span-2 flex flex-wrap items-center gap-3">
                   <button class="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-circle-plus mr-2"></i>Kayıt Oluştur</button>
@@ -1083,7 +1081,7 @@
                 </div>
                 <textarea name="notes" rows="3" class="soft-input w-full rounded-2xl px-4 py-3" placeholder="Alt bilgi / koşullar / teslim notu"></textarea>
                 <div class="flex flex-wrap items-center gap-3">
-                  <button type="submit" class="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-file-signature mr-2"></i>Teklifi Oluştur ve Önizle</button>
+                  <button type="submit" class="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-file-signature mr-2"></i>Teklifi Oluştur</button>
                   <p class="text-sm text-slate-400">Teklif oluşturulduğunda arka planda A4 kurumsal şablon üretilir.</p>
                 </div>
               </form>
@@ -1942,7 +1940,7 @@
       const options = serviceList().map((s) => `<option value="${esc(s.id)}" ${line.serviceId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join("");
       const service = serviceMetaById(line.serviceId || serviceList()[0]?.id);
       return `
-        <div class="grid gap-3 rounded-3xl border border-slate-800 bg-slate-950/55 p-4 sm:grid-cols-[1.2fr_.5fr_.7fr_auto] sm:items-center quote-line" data-index="${index}">
+        <div class="grid gap-3 rounded-3xl border border-slate-800 bg-slate-950/55 p-4 sm:grid-cols-[1.2fr_.5fr_.7fr_auto] sm:items-end quote-line" data-index="${index}">
           <div>
             <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">İşlem</label>
             <select class="soft-select w-full rounded-2xl px-4 py-3" name="serviceId">${options}</select>
@@ -2128,7 +2126,7 @@
       openModal("#quote-modal");
     }
 
-    function resolveQuoteRenderElement() {
+    async function resolveQuoteRenderElement() {
       const preview = document.getElementById("quote-sheet-preview");
       const hasContent = !!preview && preview.innerHTML.trim() !== "";
       const isVisible = !!preview && preview.offsetWidth > 0 && preview.offsetHeight > 0;
@@ -2139,13 +2137,16 @@
 
       const mount = document.createElement("div");
       mount.style.position = "fixed";
-      mount.style.left = "-99999px";
+      mount.style.left = "0";
       mount.style.top = "0";
       mount.style.width = "794px";
       mount.style.background = "#ffffff";
-      mount.style.zIndex = "-1";
+      mount.style.zIndex = "-99999";
+      mount.style.pointerEvents = "none";
       mount.innerHTML = buildProformaSheet(state.quoteDraft);
       document.body.appendChild(mount);
+      // Tarayıcının layout'u hesaplaması için 2 frame bekle
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
       return {
         element: mount,
@@ -2232,9 +2233,11 @@
       let cleanup = () => {};
       try {
         toast("PDF Hazırlanıyor...", "Lütfen bekleyin, PDF oluşturuluyor.", "cyan");
-        const renderTarget = resolveQuoteRenderElement();
+        const renderTarget = await resolveQuoteRenderElement();
         const element = renderTarget.element;
         cleanup = renderTarget.cleanup;
+        // Layout yerleşmesi için bekle (off-screen mount kullanılıyorsa kritik)
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
         if (!element || String(element.innerHTML || "").trim() === "") {
           toast("Hata", "Önizleme içeriği oluşturulamadı. Teklifi tekrar deneyin.", "red");
@@ -2296,7 +2299,7 @@
       let cleanup = () => {};
       try {
         toast("JPEG Hazırlanıyor...", "Lütfen bekleyin, görsel oluşturuluyor.", "cyan");
-        const renderTarget = resolveQuoteRenderElement();
+        const renderTarget = await resolveQuoteRenderElement();
         const el = renderTarget.element;
         cleanup = renderTarget.cleanup;
 
@@ -2975,9 +2978,9 @@
     async function runConnectionWarmup() {
       // En hızlı yanıt veren kontrol başarılı olursa anında "Bağlandi" durumuna geç.
       const checks = [
-        quickFirestoreHealthCheck(8000),
-        firestoreRestHealthCheck(8000),
-        fetchCollectionOnce("randevular", 8000)
+        quickFirestoreHealthCheck(20000),
+        firestoreRestHealthCheck(15000),
+        fetchCollectionOnce("randevular", 15000)
           .then(() => markFirebaseConnected())
           .catch(err => { if (err?.code === "permission-denied") markFirebaseConnected(); throw err; })
       ];
@@ -3263,6 +3266,8 @@
     async function handleClick(e) {
       const btn = e.target.closest("button, a");
       if (!btn) return;
+      if (btn.dataset.busy) return; // Çift tıklama koruması
+      btn.dataset.busy = "1";
       const action = btn.dataset.action || btn.id || btn.getAttribute("id");
       
       // Debug: Buton tıklamalarını logla
@@ -3326,6 +3331,8 @@
       if (action === "delete-reminder") { await deleteReminder(btn.dataset.id); return; }
       } catch (err) {
         showFirestoreWriteError("Islem", err);
+      } finally {
+        delete btn.dataset.busy;
       }
     }
 
@@ -3376,15 +3383,15 @@
       setTimeout(() => {
         if (state.firebaseStatus === "loading") {
           toast("Bağlantı kuruluyor...", "Firebase henüz yanıt vermedi, bekleniyor.", "amber");
-          console.warn("Firebase 8s içinde yanıt vermedi, beklemeye devam ediliyor.");
+          console.warn("Firebase 15s içinde yanıt vermedi, beklemeye devam ediliyor.");
         }
-      }, 8000);
+      }, 15000);
       setTimeout(() => {
         if (state.firebaseStatus === "loading") {
           markFirebaseError({ code: "timeout" });
-          console.warn("Firebase bağlantı zaman aşımı (25s): snapshot geri dönüşü alınamadı.");
+          console.warn("Firebase bağlantı zaman aşımı (40s): snapshot geri dönüşü alınamadı.");
         }
-      }, 25000);
+      }, 40000);
       if (state.session && state.users.length && !state.users.some((u) => u.username === state.session.username)) {
         state.session = null;
         localStorage.removeItem("zd_session");
