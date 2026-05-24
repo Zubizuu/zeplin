@@ -753,6 +753,81 @@
       console.error(`${context} hatasi`, err);
     }
 
+    function withTimeout(promise, timeoutMs, code = "timeout") {
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject({ code }), timeoutMs));
+      return Promise.race([promise, timeoutPromise]);
+    }
+
+    function toFirestoreValue(value) {
+      if (value === null || value === undefined) return { nullValue: null };
+      if (Array.isArray(value)) {
+        return { arrayValue: { values: value.map((v) => toFirestoreValue(v)) } };
+      }
+      const t = typeof value;
+      if (t === "string") return { stringValue: value };
+      if (t === "boolean") return { booleanValue: value };
+      if (t === "number") {
+        return Number.isInteger(value)
+          ? { integerValue: String(value) }
+          : { doubleValue: value };
+      }
+      if (t === "object") {
+        const fields = {};
+        Object.entries(value).forEach(([k, v]) => {
+          fields[k] = toFirestoreValue(v);
+        });
+        return { mapValue: { fields } };
+      }
+      return { stringValue: String(value) };
+    }
+
+    async function writeDocViaRest(collectionName, payload) {
+      const projectId = firebaseConfig.projectId;
+      const apiKey = firebaseConfig.apiKey;
+      const documentId = uid(collectionName);
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionName}?documentId=${encodeURIComponent(documentId)}&key=${apiKey}`;
+      const body = {
+        fields: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, toFirestoreValue(v)]))
+      };
+      const res = await withTimeout(fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }), 6000, "timeout");
+
+      if (!res.ok) {
+        let json = null;
+        try { json = await res.json(); } catch {}
+        const status = json?.error?.status || "";
+        if (status === "PERMISSION_DENIED") throw { code: "permission-denied" };
+        if (status === "UNAVAILABLE") throw { code: "unavailable" };
+        if (status === "FAILED_PRECONDITION") throw { code: "failed-precondition" };
+        throw { code: "network-blocked" };
+      }
+
+      markFirebaseConnected();
+      return { id: documentId };
+    }
+
+    async function createDocRobust(collectionName, payload) {
+      let lastErr = null;
+      for (let i = 0; i < 2; i++) {
+        try {
+          const ref = await withTimeout(addDoc(collection(db, collectionName), payload), 5000, "timeout");
+          markFirebaseConnected();
+          return ref;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+
+      const code = lastErr?.code || "";
+      if (code === "timeout" || code === "unavailable" || code === "network-blocked") {
+        return writeDocViaRest(collectionName, payload);
+      }
+      throw lastErr || { code: "unknown" };
+    }
+
     function updateFirebaseBadge() {
       setFirebaseBadge(state.firebaseStatus);
     }
@@ -777,29 +852,37 @@
       const tabContent = document.getElementById("tab-content");
       if (!tabContent) return;
       const isAdmin = state.session.role === "Yönetici";
-      const tabs = {
-        dashboard: renderDashboardTab(),
-        appointments: renderAppointmentsTab(),
-        records: renderRecordsTab(),
-        quote: renderQuoteTab(),
-        finance: isAdmin ? renderFinanceTab() : renderDashboardTab(),
-        reports: isAdmin ? renderReportsTab() : renderDashboardTab(),
-        logs: isAdmin ? renderLogsTab() : renderDashboardTab(),
-        reminders: isAdmin ? renderRemindersTab() : renderDashboardTab(),
-        users: isAdmin ? renderUsersTab() : renderDashboardTab(),
-        settings: isAdmin ? renderSettingsTab() : renderDashboardTab(),
+      const tabRenderers = {
+        dashboard: () => renderDashboardTab(),
+        appointments: () => renderAppointmentsTab(),
+        records: () => renderRecordsTab(),
+        quote: () => renderQuoteTab(),
+        finance: () => (isAdmin ? renderFinanceTab() : renderDashboardTab()),
+        reports: () => (isAdmin ? renderReportsTab() : renderDashboardTab()),
+        logs: () => (isAdmin ? renderLogsTab() : renderDashboardTab()),
+        reminders: () => (isAdmin ? renderRemindersTab() : renderDashboardTab()),
+        users: () => (isAdmin ? renderUsersTab() : renderDashboardTab()),
+        settings: () => (isAdmin ? renderSettingsTab() : renderDashboardTab()),
       };
-      tabContent.innerHTML = tabs[state.tab] || renderDashboardTab();
-      updateStaffServiceSelects();
-      updateMaintenanceBook();
-      if (state.tab === "quote") hydrateQuoteRows();
-      if (state.tab === "settings") hydrateSettingsRows();
-      if (state.tab === "users") renderUsersTable();
-      if (state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
-      if (state.tab === "reports") renderDailyReport();
-      if (state.tab === "reminders") { renderReminderList(); renderAllRemindersList(); }
-      if (state.tab === "records") renderRecordsTable();
-      if (state.tab === "appointments") renderAppointmentsTable();
+
+      try {
+        const renderFn = tabRenderers[state.tab] || tabRenderers.dashboard;
+        tabContent.innerHTML = renderFn();
+        updateStaffServiceSelects();
+        updateMaintenanceBook();
+        if (state.tab === "quote") hydrateQuoteRows();
+        if (state.tab === "settings") hydrateSettingsRows();
+        if (state.tab === "users") renderUsersTable();
+        if (state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
+        if (state.tab === "reports") renderDailyReport();
+        if (state.tab === "reminders") { renderReminderList(); renderAllRemindersList(); }
+        if (state.tab === "records") renderRecordsTable();
+        if (state.tab === "appointments") renderAppointmentsTable();
+      } catch (err) {
+        console.error("Tab render hatası:", state.tab, err);
+        tabContent.innerHTML = `<div class="rounded-3xl border border-rose-500/30 bg-rose-500/10 px-4 py-6 text-sm text-rose-200">${esc(state.tab)} sekmesi yüklenirken hata oluştu. Lütfen sayfayı yenileyin.</div>`;
+        toast("Sekme Hatası", `${state.tab} sekmesi yüklenemedi: ${err?.message || "Bilinmeyen hata"}`, "red");
+      }
     }
 
     function summaryMetricsHTML() {
@@ -2465,30 +2548,35 @@
         createdAt: nowISO()
       };
       
+      let savedRef = null;
       try {
-        await addDoc(collection(db, "teklifler"), quote);
-        console.log("Teklif Firestore'a kaydedildi:", quote.quoteNo);
-        
-        // Modalı açmadan önce önizlemeyi hazırla
-        setCurrentQuotePreview(quote);
-        console.log("Önizleme hazırlandı, modal açılıyor...");
-        
-        // Kısa bir gecikme ile modalı aç (DOM'un güncellenmesi için)
-        setTimeout(() => {
-          openModal("#quote-modal");
-          toast("Teklif Hazır", "A4 önizleme oluşturuldu. PDF veya JPEG indirebilirsiniz.", "green");
-        }, 100);
-        
-        await logActivity("Teklif Oluşturma", `${quote.quoteNo} numaralı teklif oluşturuldu.`);
-        
-        form.reset();
-        form.querySelector('[name="quoteDate"]').value = new Date().toISOString().slice(0, 10);
-        form.querySelector('[name="validUntil"]').value = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-        hydrateQuoteRows();
+        savedRef = await createDocRobust("teklifler", quote);
+        console.log("Teklif Firestore'a kaydedildi:", quote.quoteNo, savedRef?.id || "");
       } catch (err) {
-        console.error("Teklif Hatası:", err);
-        toast("Hata", "Teklif oluşturulurken bir sorun oluştu: " + err.message, "red");
+        showFirestoreWriteError("Teklif Kaydi", err);
+        return;
       }
+
+      // Modalı açmadan önce önizlemeyi hazırla
+      setCurrentQuotePreview(quote);
+      console.log("Önizleme hazırlandı, modal açılıyor...");
+
+      // Kısa bir gecikme ile modalı aç (DOM'un güncellenmesi için)
+      setTimeout(() => {
+        openModal("#quote-modal");
+        toast("Teklif Hazır", "A4 önizleme oluşturuldu. PDF veya JPEG indirebilirsiniz.", "green");
+      }, 100);
+
+      try {
+        await logActivity("Teklif Oluşturma", `${quote.quoteNo} numaralı teklif oluşturuldu.`);
+      } catch (err) {
+        console.warn("Aktivite logu yazılamadı, teklif kaydı başarılı:", err);
+      }
+
+      form.reset();
+      form.querySelector('[name="quoteDate"]').value = new Date().toISOString().slice(0, 10);
+      form.querySelector('[name="validUntil"]').value = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      hydrateQuoteRows();
     }
 
     async function updateRecordStatus(id, nextStatus) {
@@ -2747,6 +2835,20 @@
         }
       } else if (firstError) {
         markFirebaseError(firstError);
+      }
+    }
+
+    async function runConnectionWarmup() {
+      // En hızlı yanıt veren kontrol başarılı olursa anında "Bağlandı" durumuna geç.
+      const checks = [
+        quickFirestoreHealthCheck(2500),
+        firestoreRestHealthCheck(3000),
+        fetchCollectionOnce("randevular", 2500).then(() => markFirebaseConnected())
+      ];
+      try {
+        await Promise.any(checks);
+      } catch {
+        // Warmup başarısız olsa bile fallback süreci veri çekmeyi denemeye devam edecek.
       }
     }
 
@@ -3112,24 +3214,17 @@
     async function init() {
       renderAll();
       setupSnapshots();
-      try {
-        await quickFirestoreHealthCheck();
-      } catch (err) {
-        console.warn("quick firestore check failed", err);
-        try {
-          await firestoreRestHealthCheck();
-        } catch (restErr) {
-          markFirebaseError(restErr);
-          console.warn("firestore REST health check failed", restErr);
-        }
-      }
-      await bootstrapCollectionsFallback();
+      await runConnectionWarmup();
+      bootstrapCollectionsFallback().catch((err) => {
+        markFirebaseError(err);
+        console.warn("bootstrap fallback failed", err);
+      });
       setTimeout(() => {
         if (state.firebaseStatus === "loading") {
           markFirebaseError({ code: "timeout" });
           console.warn("Firebase bağlantı zaman aşımı: snapshot geri dönüşü alınamadı.");
         }
-      }, 12000);
+      }, 7000);
       if (state.session && state.users.length && !state.users.some((u) => u.username === state.session.username)) {
         state.session = null;
         localStorage.removeItem("zd_session");
