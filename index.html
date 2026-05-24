@@ -218,6 +218,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
     import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -231,6 +232,12 @@
     };
 
     const app = initializeApp(firebaseConfig);
+
+    // Firebase Authentication: tüm cihazlar anonim token alır.
+    // Bu sayede Firestore kurallarında `request.auth != null` yeterli olur.
+    // Anonymous provider Firebase Console'da etkin değilse sessizce devam eder (rules: if true ile de çalışır).
+    const auth = getAuth(app);
+    signInAnonymously(auth).catch(err => console.warn("Anonim giriş yapılamadı (kritik değil):", err?.code));
     // persistentLocalCache: sonraki tüm açılışlar IndexedDB'den ANLİK yüklenir, ağ beklenmez.
     // Gizli mod / eski tarayıcıda IndexedDB yoksa SDK otomatik olarak hafıza önbelleğine geçer.
     // experimentalAutoDetectLongPolling: WebChannel (HTTP/2) önce denenir; proxy/güvenlik duvarı
@@ -725,6 +732,7 @@
     function markFirebaseConnected() {
       state.firebaseStatus = "ok";
       state.firebaseErrorCode = "";
+      state.firebaseLastToastErrorCode = ""; // Yeniden bağlantıda sonraki hatalar tekrar toast gösterebilsin
       if (state.session) setFirebaseBadge("ok");
     }
 
@@ -2863,8 +2871,14 @@
     async function quickFirestoreHealthCheck(timeoutMs = 12000) {
       const readPromise = getDoc(doc(db, "ayarlar", "genel"));
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), timeoutMs));
-      await Promise.race([readPromise, timeoutPromise]);
-      markFirebaseConnected();
+      try {
+        await Promise.race([readPromise, timeoutPromise]);
+        markFirebaseConnected();
+      } catch (err) {
+        // permission-denied → Firebase sunucusuna erişildi, sadece kural engeli var
+        if (err?.code === "permission-denied") markFirebaseConnected();
+        throw err;
+      }
     }
 
     async function firestoreRestHealthCheck(timeoutMs = 12000) {
@@ -2882,8 +2896,11 @@
         let body = null;
         try { body = await res.json(); } catch {}
         const status = body?.error?.status || "";
-        if (status === "PERMISSION_DENIED") throw { code: "permission-denied" };
-        if (status === "UNAUTHENTICATED") throw { code: "permission-denied" };
+        // PERMISSION_DENIED / UNAUTHENTICATED → Firebase REST endpoint’e erişildi, kural engeli var
+        if (status === "PERMISSION_DENIED" || status === "UNAUTHENTICATED") {
+          markFirebaseConnected();
+          throw { code: "permission-denied" };
+        }
         if (status === "UNAVAILABLE") throw { code: "unavailable" };
         throw { code: "network-blocked" };
       } catch (err) {
@@ -2895,15 +2912,20 @@
     }
 
     async function bootstrapCollectionsFallback() {
-      const jobs = [
-        { col: "kullanicilar", key: "users" },
+      // Oturum yoksa sadece genel sayfanın ihtiyaç duyduğu koleksiyonları çek.
+      // Personel koleksiyonlarını giriş yapmadan çekmek gereksiz izin hataları üretir.
+      const publicJobs = [
         { col: "kayitlar", key: "records" },
+        { col: "randevular", key: "appointments" }
+      ];
+      const staffJobs = [
+        { col: "kullanicilar", key: "users" },
         { col: "giderler", key: "expenses" },
-        { col: "randevular", key: "appointments" },
         { col: "teklifler", key: "quotes" },
         { col: "aktiviteler", key: "logs" },
         { col: "hatirlatmalar", key: "reminders" }
       ];
+      const jobs = state.session ? [...publicJobs, ...staffJobs] : publicJobs;
 
       const results = await Promise.allSettled(jobs.map((job) => fetchCollectionOnce(job.col).then((snap) => ({ job, snap }))));
       let anySuccess = false;
@@ -2937,16 +2959,18 @@
     }
 
     async function runConnectionWarmup() {
-      // En hızlı yanıt veren kontrol başarılı olursa anında "Bağlandı" durumuna geç.
+      // En hızlı yanıt veren kontrol başarılı olursa anında "Bağlandi" durumuna geç.
       const checks = [
         quickFirestoreHealthCheck(8000),
         firestoreRestHealthCheck(8000),
-        fetchCollectionOnce("randevular", 8000).then(() => markFirebaseConnected())
+        fetchCollectionOnce("randevular", 8000)
+          .then(() => markFirebaseConnected())
+          .catch(err => { if (err?.code === "permission-denied") markFirebaseConnected(); throw err; })
       ];
       try {
         await Promise.any(checks);
       } catch {
-        // Warmup başarısız olsa bile fallback süreci veri çekmeyi denemeye devam edecek.
+        // Warmup başarısız olsa bile fallback süreç veri çekmeyi denemeye devam edecek.
       }
     }
 
