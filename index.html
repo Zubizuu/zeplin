@@ -218,7 +218,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-    import { initializeFirestore, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+    import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDZ7MbhT9_O6e3NUO9zMQ1A8igY374lxPQ",
@@ -231,12 +231,24 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    // GitHub Pages / uzak bağlantı için: useFetchStreams kaldırıldı (Fetch API daha hızlı),
-    // experimentalAutoDetectLongPolling korundu (proxy/güvenlik duvarı ortamları için fallback).
-    const db = initializeFirestore(app, {
-      experimentalAutoDetectLongPolling: true,
-      ignoreUndefinedProperties: true
-    });
+    // persistentLocalCache: sonraki tüm açılışlar IndexedDB'den ANLİK yüklenir, ağ beklenmez.
+    // Gizli mod / eski tarayıcıda IndexedDB yoksa SDK hafiza önbelleğine gerı düşer.
+    // experimentalForceLongPolling: WebChannel proxy/güvenlik duvarı tespitini atlar, 
+    //   bağlantının hemen uzun-sorgulama modunda açılmasını sağlar (daha hızlı bağlantı).
+    let db;
+    try {
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+        experimentalForceLongPolling: true,
+        ignoreUndefinedProperties: true
+      });
+    } catch (e) {
+      // IndexedDB başlatamazsa (gizli mod vb.) varsayılan hafiza moduyla başlat
+      db = initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+        ignoreUndefinedProperties: true
+      });
+    }
 
     const defaultSettings = {
       companyName: "Zeplin Detailing",
@@ -2715,6 +2727,7 @@
       state.session = { username, role };
       localStorage.setItem("zd_session", JSON.stringify(state.session));
       state.tab = "dashboard";
+      setupStaffSnapshots(); // Personel verilerini dinlemeye başla
       renderAll();
       logActivity("Giriş", `${username} (${role}) sisteme giriş yaptı.`);
       toast("Giriş başarılı", `${username} olarak ${role} paneli açıldı.`, "green");
@@ -2722,6 +2735,7 @@
 
     function logoutUser() {
       if (state.session) logActivity("Çıkış", `${state.session.username} sistemden çıkış yaptı.`);
+      teardownStaffSnapshots(); // Personel dinleyicilerini kapat
       state.session = null;
       state.tab = "dashboard";
       localStorage.removeItem("zd_session");
@@ -2744,18 +2758,11 @@
       }
     }
 
-    function setupSnapshots() {
-      onSnapshot(query(collection(db, "kullanicilar"), orderBy("username", "asc")), (snap) => {
-        markFirebaseConnected();
-        state.users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        ensureDefaultUsersIfEmpty();
-        if (state.session && !state.users.some((u) => u.username === state.session.username) && state.users.length > 0) {
-          logoutUser();
-          return;
-        }
-        if (state.session) renderUsersTable();
-      }, (err) => { markFirebaseError(err); console.warn("users snapshot", err); });
+    // Personel dinleyicilerinin iptal fonksiyonları — çıkışta temizlenir
+    const snapshotUnsubscribers = { staff: [] };
 
+    // ── Genel müşteri sayfası için her zaman aktif 3 dinleyici ──────────────────
+    function setupPublicSnapshots() {
       onSnapshot(query(collection(db, "kayitlar"), orderBy("createdAt", "desc")), (snap) => {
         markFirebaseConnected();
         state.records = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -2771,14 +2778,6 @@
           if (state.tab === "quote") renderQuoteHistory();
         }
       }, (err) => { markFirebaseError(err); console.warn("records snapshot", err); });
-
-      onSnapshot(query(collection(db, "giderler"), orderBy("createdAt", "desc")), (snap) => {
-        markFirebaseConnected();
-        state.expenses = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (state.session && state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
-        if (state.session && state.tab === "reports") renderDailyReport();
-        renderSummaryCards();
-      }, (err) => { markFirebaseError(err); console.warn("expenses snapshot", err); });
 
       onSnapshot(query(collection(db, "randevular"), orderBy("createdAt", "desc")), (snap) => {
         markFirebaseConnected();
@@ -2796,27 +2795,6 @@
         if (state.session && state.tab === "appointments") renderAppointmentsTable();
       }, (err) => { markFirebaseError(err); console.warn("appointments snapshot", err); });
 
-      onSnapshot(query(collection(db, "teklifler"), orderBy("createdAt", "desc")), (snap) => {
-        markFirebaseConnected();
-        state.quotes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (state.session && state.tab === "quote") renderQuoteHistory();
-      }, (err) => { markFirebaseError(err); console.warn("quotes snapshot", err); });
-
-      onSnapshot(query(collection(db, "aktiviteler"), orderBy("createdAt", "desc")), (snap) => {
-        markFirebaseConnected();
-        state.logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (state.session && state.tab === "logs") renderLogsTable(state.logs);
-      }, (err) => { markFirebaseError(err); console.warn("logs snapshot", err); });
-
-      onSnapshot(query(collection(db, "hatirlatmalar"), orderBy("createdAt", "desc")), (snap) => {
-        markFirebaseConnected();
-        state.reminders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (state.session && state.tab === "reminders") {
-          renderReminderList();
-          renderAllRemindersList();
-        }
-      }, (err) => { markFirebaseError(err); console.warn("reminders snapshot", err); });
-
       onSnapshot(doc(db, "ayarlar", "genel"), (snap) => {
         markFirebaseConnected();
         state.settings = snap.exists() ? { ...defaultSettings, ...snap.data() } : { ...defaultSettings };
@@ -2831,6 +2809,58 @@
         updateStatusSummary();
         if (!state.session) renderShell();
       }, (err) => { markFirebaseError(err); console.warn("settings snapshot", err); });
+    }
+
+    // ── Personel paneli için 5 ek dinleyici — sadece giriş yapıldığında başlar ──
+    function setupStaffSnapshots() {
+      if (snapshotUnsubscribers.staff.length > 0) return; // zaten kurulu
+      snapshotUnsubscribers.staff.push(
+        onSnapshot(query(collection(db, "kullanicilar"), orderBy("username", "asc")), (snap) => {
+          markFirebaseConnected();
+          state.users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          ensureDefaultUsersIfEmpty();
+          if (state.session && !state.users.some((u) => u.username === state.session.username) && state.users.length > 0) {
+            logoutUser();
+            return;
+          }
+          if (state.session) renderUsersTable();
+        }, (err) => { markFirebaseError(err); console.warn("users snapshot", err); }),
+
+        onSnapshot(query(collection(db, "giderler"), orderBy("createdAt", "desc")), (snap) => {
+          markFirebaseConnected();
+          state.expenses = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          if (state.session && state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
+          if (state.session && state.tab === "reports") renderDailyReport();
+          renderSummaryCards();
+        }, (err) => { markFirebaseError(err); console.warn("expenses snapshot", err); }),
+
+        onSnapshot(query(collection(db, "teklifler"), orderBy("createdAt", "desc")), (snap) => {
+          markFirebaseConnected();
+          state.quotes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          if (state.session && state.tab === "quote") renderQuoteHistory();
+        }, (err) => { markFirebaseError(err); console.warn("quotes snapshot", err); }),
+
+        onSnapshot(query(collection(db, "aktiviteler"), orderBy("createdAt", "desc")), (snap) => {
+          markFirebaseConnected();
+          state.logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          if (state.session && state.tab === "logs") renderLogsTable(state.logs);
+        }, (err) => { markFirebaseError(err); console.warn("logs snapshot", err); }),
+
+        onSnapshot(query(collection(db, "hatirlatmalar"), orderBy("createdAt", "desc")), (snap) => {
+          markFirebaseConnected();
+          state.reminders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          if (state.session && state.tab === "reminders") {
+            renderReminderList();
+            renderAllRemindersList();
+          }
+        }, (err) => { markFirebaseError(err); console.warn("reminders snapshot", err); })
+      );
+    }
+
+    // ── Çıkışta personel dinleyicilerini kapat ──────────────────────────────────
+    function teardownStaffSnapshots() {
+      snapshotUnsubscribers.staff.forEach(unsub => { try { unsub(); } catch {} });
+      snapshotUnsubscribers.staff = [];
     }
 
     async function fetchCollectionOnce(colName, timeoutMs = 12000) {
@@ -3295,7 +3325,8 @@
 
     async function init() {
       renderAll();
-      setupSnapshots();
+      setupPublicSnapshots(); // Her zaman gerekli 3 dinleyici (kayitlar, randevular, ayarlar)
+      if (state.session) setupStaffSnapshots(); // Kayıtlı oturum varsa personel verilerini de başlat
       await runConnectionWarmup();
       bootstrapCollectionsFallback().catch((err) => {
         markFirebaseError(err);
