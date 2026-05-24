@@ -232,23 +232,14 @@
 
     const app = initializeApp(firebaseConfig);
     // persistentLocalCache: sonraki tüm açılışlar IndexedDB'den ANLİK yüklenir, ağ beklenmez.
-    // Gizli mod / eski tarayıcıda IndexedDB yoksa SDK hafiza önbelleğine gerı düşer.
-    // experimentalForceLongPolling: WebChannel proxy/güvenlik duvarı tespitini atlar, 
-    //   bağlantının hemen uzun-sorgulama modunda açılmasını sağlar (daha hızlı bağlantı).
-    let db;
-    try {
-      db = initializeFirestore(app, {
-        localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
-        experimentalForceLongPolling: true,
-        ignoreUndefinedProperties: true
-      });
-    } catch (e) {
-      // IndexedDB başlatamazsa (gizli mod vb.) varsayılan hafiza moduyla başlat
-      db = initializeFirestore(app, {
-        experimentalForceLongPolling: true,
-        ignoreUndefinedProperties: true
-      });
-    }
+    // Gizli mod / eski tarayıcıda IndexedDB yoksa SDK otomatik olarak hafıza önbelleğine geçer.
+    // experimentalAutoDetectLongPolling: WebChannel (HTTP/2) önce denenir; proxy/güvenlik duvarı
+    //   engeli tespit edilirse otomatik olarak XHR long-polling moduna geçer. En kararlı mod.
+    const db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+      experimentalAutoDetectLongPolling: true,
+      ignoreUndefinedProperties: true
+    });
 
     const defaultSettings = {
       companyName: "Zeplin Detailing",
