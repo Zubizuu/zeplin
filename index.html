@@ -124,7 +124,6 @@
   </div>
 
   <div id="quote-modal" class="fixed inset-0 z-50 hidden flex-col bg-slate-950/95 backdrop-blur-sm">
-    <!-- Modal Header - Sabit Üst -->
     <div class="flex-shrink-0 border-b border-slate-800 bg-slate-950/90 px-4 py-3">
       <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
@@ -137,12 +136,10 @@
       </div>
     </div>
     
-    <!-- Modal Content - Kaydırılabilir Orta -->
     <div class="flex-1 overflow-auto p-4">
       <div id="quote-sheet-preview" class="mx-auto w-full max-w-[794px] shadow-2xl"></div>
     </div>
     
-    <!-- Modal Footer - Sabit Alt Butonlar -->
     <div class="flex-shrink-0 border-t border-slate-800 bg-slate-950/90 px-4 py-3">
       <button id="download-quote-jpeg" class="w-full rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-400">
         <i class="fa-solid fa-image mr-2"></i>JPEG İndir
@@ -210,8 +207,8 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-    import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+    import { initializeFirestore, memoryLocalCache, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDZ7MbhT9_O6e3NUO9zMQ1A8igY374lxPQ",
@@ -225,18 +222,13 @@
 
     const app = initializeApp(firebaseConfig);
 
-    // Firebase Authentication: tüm cihazlar anonim token alır.
-    // Bu sayede Firestore kurallarında `request.auth != null` yeterli olur.
-    // Anonymous provider Firebase Console'da etkin değilse sessizce devam eder (rules: if true ile de çalışır).
     const auth = getAuth(app);
     signInAnonymously(auth).catch(err => console.warn("Anonim giriş yapılamadı (kritik değil):", err?.code));
-    // persistentLocalCache: sonraki tüm açılışlar IndexedDB'den ANLİK yüklenir, ağ beklenmez.
-    // Gizli mod / eski tarayıcıda IndexedDB yoksa SDK otomatik olarak hafıza önbelleğine geçer.
-    // experimentalAutoDetectLongPolling: WebChannel (HTTP/2) önce denenir; proxy/güvenlik duvarı
-    //   engeli tespit edilirse otomatik olarak XHR long-polling moduna geçer. En kararlı mod.
+    
+    // GÜNCELLEME: experimentalForceLongPolling kullanıldı
     const db = initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
-      experimentalAutoDetectLongPolling: true,
+      localCache: memoryLocalCache(),
+      experimentalForceLongPolling: true,
       ignoreUndefinedProperties: true
     });
 
@@ -290,7 +282,7 @@
     const nowISO = () => new Date().toISOString();
     const uid = (prefix = "id") => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
-    const normalizePlate = (v) => String(v || "").toUpperCase().replace(/\s+/g, "").replace(/İ/g, "I").replace(/İ/g, "I");
+    const normalizePlate = (v) => String(v || "").toUpperCase().replace(/\s+/g, "").replace(/İ/g, "I").replace(/İ/g, "I");
     const normalizePhone = (v) => String(v || "").replace(/\D/g, "");
 
     function formatPlate(v) {
@@ -724,7 +716,7 @@
     function markFirebaseConnected() {
       state.firebaseStatus = "ok";
       state.firebaseErrorCode = "";
-      state.firebaseLastToastErrorCode = ""; // Yeniden bağlantıda sonraki hatalar tekrar toast gösterebilsin
+      state.firebaseLastToastErrorCode = ""; 
       if (state.session) setFirebaseBadge("ok");
     }
 
@@ -824,7 +816,7 @@
           return ref;
         } catch (err) {
           lastErr = err;
-          if (NON_RETRIABLE.includes(err?.code)) break; // Tekrar denemenin anlamı yok
+          if (NON_RETRIABLE.includes(err?.code)) break;
         }
       }
 
@@ -2053,7 +2045,6 @@
         
         return `
         <div style="background: #ffffff; color: #1e293b; padding: 32px; min-height: 100%; font-family: system-ui, -apple-system, sans-serif;">
-          <!-- Header -->
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #0ea5e9;">
             <div>
               <p style="color: #0ea5e9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; margin: 0;">PROFORMA TEKLİF</p>
@@ -2067,7 +2058,6 @@
             </div>
           </div>
           
-          <!-- Info Grid -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
             <div style="background: #f8fafc; padding: 16px; border-radius: 8px;">
               <p style="color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 8px 0;">Müşteri / Araç</p>
@@ -2082,7 +2072,6 @@
             </div>
           </div>
           
-          <!-- Table -->
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px;">
             <thead>
               <tr style="background: #0ea5e9; color: white;">
@@ -2102,7 +2091,6 @@
             </tbody>
           </table>
           
-          <!-- Total -->
           <div style="display: flex; justify-content: flex-end; margin-bottom: 24px;">
             <div style="background: #f0f9ff; border: 2px solid #0ea5e9; padding: 16px 24px; border-radius: 8px; text-align: right;">
               <p style="color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; margin: 0;">Toplam Tutar</p>
@@ -2110,7 +2098,6 @@
             </div>
           </div>
           
-          <!-- Footer -->
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 11px; color: #64748b; text-align: center;">
             ${esc(quote.notes || state.settings?.footerNote || defaultSettings.footerNote)}
           </div>
@@ -2264,8 +2251,6 @@
             logging: true,
             letterRendering: true,
             onclone: (clonedDoc) => {
-              // html2canvas 1.4.1 oklch() renk fonksiyonunu desteklemiyor (Tailwind v4).
-              // Teklif sayfası tamamen inline stil kullandığından dış CSS etiketleri gereksiz.
               clonedDoc.querySelectorAll('style').forEach(el => el.remove());
             }
           },
@@ -2322,8 +2307,6 @@
           logging: true,
           letterRendering: true,
           onclone: (clonedDoc) => {
-            // html2canvas 1.4.1 oklch() renk fonksiyonunu desteklemiyor (Tailwind v4).
-            // Teklif sayfası tamamen inline stil kullandığından dış CSS etiketleri gereksiz.
             clonedDoc.querySelectorAll('style').forEach(el => el.remove());
           }
         });
@@ -2793,7 +2776,7 @@
           if (state.tab === "reminders") { renderReminderList(); renderAllRemindersList(); }
           if (state.tab === "quote") renderQuoteHistory();
         }
-      }, (err) => { markFirebaseError(err); console.warn("records snapshot", err); });
+      }, (err) => { if (err?.code === "permission-denied") markFirebaseConnected(); else markFirebaseError(err); console.warn("records snapshot", err); });
 
       onSnapshot(query(collection(db, "randevular"), orderBy("createdAt", "desc")), (snap) => {
         markFirebaseConnected();
@@ -2809,7 +2792,7 @@
         state.lastAppointmentCount = newCount;
         if (state.session && state.tab === "dashboard") renderDashboardDataOnly();
         if (state.session && state.tab === "appointments") renderAppointmentsTable();
-      }, (err) => { markFirebaseError(err); console.warn("appointments snapshot", err); });
+      }, (err) => { if (err?.code === "permission-denied") markFirebaseConnected(); else markFirebaseError(err); console.warn("appointments snapshot", err); });
 
       onSnapshot(doc(db, "ayarlar", "genel"), (snap) => {
         markFirebaseConnected();
@@ -2824,7 +2807,7 @@
         updatePublicAppointments();
         updateStatusSummary();
         if (!state.session) renderShell();
-      }, (err) => { markFirebaseError(err); console.warn("settings snapshot", err); });
+      }, (err) => { if (err?.code === "permission-denied") markFirebaseConnected(); else markFirebaseError(err); console.warn("settings snapshot", err); });
     }
 
     // ── Personel paneli için 5 ek dinleyici — sadece giriş yapıldığında başlar ──
@@ -2840,7 +2823,7 @@
             return;
           }
           if (state.session) renderUsersTable();
-        }, (err) => { markFirebaseError(err); console.warn("users snapshot", err); }),
+        }, (err) => { if (err?.code === "permission-denied") markFirebaseConnected(); else markFirebaseError(err); console.warn("users snapshot", err); }),
 
         onSnapshot(query(collection(db, "giderler"), orderBy("createdAt", "desc")), (snap) => {
           markFirebaseConnected();
@@ -2848,19 +2831,19 @@
           if (state.session && state.tab === "finance") { renderFinanceTables(); renderExpenseList(); }
           if (state.session && state.tab === "reports") renderDailyReport();
           renderSummaryCards();
-        }, (err) => { markFirebaseError(err); console.warn("expenses snapshot", err); }),
+        }, (err) => { if (err?.code === "permission-denied") markFirebaseConnected(); else markFirebaseError(err); console.warn("expenses snapshot", err); }),
 
         onSnapshot(query(collection(db, "teklifler"), orderBy("createdAt", "desc")), (snap) => {
           markFirebaseConnected();
           state.quotes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           if (state.session && state.tab === "quote") renderQuoteHistory();
-        }, (err) => { markFirebaseError(err); console.warn("quotes snapshot", err); }),
+        }, (err) => { if (err?.code === "permission-denied") markFirebaseConnected(); else markFirebaseError(err); console.warn("quotes snapshot", err); }),
 
         onSnapshot(query(collection(db, "aktiviteler"), orderBy("createdAt", "desc")), (snap) => {
           markFirebaseConnected();
           state.logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           if (state.session && state.tab === "logs") renderLogsTable(state.logs);
-        }, (err) => { markFirebaseError(err); console.warn("logs snapshot", err); }),
+        }, (err) => { if (err?.code === "permission-denied") markFirebaseConnected(); else markFirebaseError(err); console.warn("logs snapshot", err); }),
 
         onSnapshot(query(collection(db, "hatirlatmalar"), orderBy("createdAt", "desc")), (snap) => {
           markFirebaseConnected();
@@ -2869,7 +2852,7 @@
             renderReminderList();
             renderAllRemindersList();
           }
-        }, (err) => { markFirebaseError(err); console.warn("reminders snapshot", err); })
+        }, (err) => { if (err?.code === "permission-denied") markFirebaseConnected(); else markFirebaseError(err); console.warn("reminders snapshot", err); })
       );
     }
 
@@ -2976,11 +2959,11 @@
     }
 
     async function runConnectionWarmup() {
-      // En hızlı yanıt veren kontrol başarılı olursa anında "Bağlandi" durumuna geç.
+      // GÜNCELLEME: Timeout süreleri artırıldı
       const checks = [
-        quickFirestoreHealthCheck(20000),
-        firestoreRestHealthCheck(15000),
-        fetchCollectionOnce("randevular", 15000)
+        quickFirestoreHealthCheck(25000), 
+        firestoreRestHealthCheck(20000),  
+        fetchCollectionOnce("randevular", 20000) 
           .then(() => markFirebaseConnected())
           .catch(err => { if (err?.code === "permission-denied") markFirebaseConnected(); throw err; })
       ];
@@ -3270,10 +3253,6 @@
       btn.dataset.busy = "1";
       const action = btn.dataset.action || btn.id || btn.getAttribute("id");
       
-      // Debug: Buton tıklamalarını logla
-      if (btn.id && (btn.id.includes('pdf') || btn.id.includes('jpeg') || btn.id.includes('whatsapp'))) {
-        console.log("Buton tıklandı:", btn.id, "Action:", action);
-      }
       try {
       if (btn.id === "open-login") {
         document.getElementById("login-error").classList.add("hidden");
@@ -3368,37 +3347,39 @@
     document.addEventListener("change", (e) => handleChange(e));
     document.addEventListener("submit", (e) => handleSubmit(e));
 
+    // GÜNCELLEME: init() fonksiyonundaki onAuthStateChanged bloğu kaldırıldı. 
+    // runConnectionWarmup asenkron olarak tetiklendi.
     async function init() {
       renderAll();
-      setupPublicSnapshots(); // Her zaman gerekli 3 dinleyici (kayitlar, randevular, ayarlar)
-      if (state.session) setupStaffSnapshots(); // Kayıtlı oturum varsa personel verilerini de başlat
-      await runConnectionWarmup();
+      
+      setupPublicSnapshots(); 
+      if (state.session) setupStaffSnapshots(); 
+      
+      runConnectionWarmup().catch(() => {});
+      
       bootstrapCollectionsFallback().catch((err) => {
         markFirebaseError(err);
         console.warn("bootstrap fallback failed", err);
       });
-      // Soğuk bağlantı (TLS + WebChannel kurulumu) 5–12 sn sürebilir.
-      // İlk aşamada 8 sn sonra hafif uyarı toast'u göster ama hata durumuna geçme;
-      // 25 sn sonra gerçek timeout hatası ver.
+      
       setTimeout(() => {
         if (state.firebaseStatus === "loading") {
           toast("Bağlantı kuruluyor...", "Firebase henüz yanıt vermedi, bekleniyor.", "amber");
           console.warn("Firebase 15s içinde yanıt vermedi, beklemeye devam ediliyor.");
         }
       }, 15000);
+      
       setTimeout(() => {
         if (state.firebaseStatus === "loading") {
           markFirebaseError({ code: "timeout" });
           console.warn("Firebase bağlantı zaman aşımı (40s): snapshot geri dönüşü alınamadı.");
         }
       }, 40000);
+      
       if (state.session && state.users.length && !state.users.some((u) => u.username === state.session.username)) {
         state.session = null;
         localStorage.removeItem("zd_session");
         renderAll();
-      }
-      if (state.session) {
-        toast("Oturum yüklendi", `${state.session.username} olarak devam ediliyor.`, "cyan");
       }
     }
 
