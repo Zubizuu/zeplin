@@ -162,6 +162,45 @@
     </div>
   </div>
 
+  <div id="staff-appointment-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/85 px-4 py-6 backdrop-blur-sm">
+    <div class="glass rise w-full max-w-2xl rounded-[2rem] p-6">
+      <div class="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <p class="text-xs uppercase tracking-[0.35em] text-cyan-300">Randevu Yönetimi</p>
+          <h2 class="text-2xl font-semibold text-white">Yeni Randevu Oluştur</h2>
+        </div>
+        <button id="close-staff-appointment-modal" class="rounded-full border border-slate-700 px-3 py-2 text-slate-300 transition hover:border-cyan-400 hover:text-cyan-200"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="staff-appointment-form" class="grid gap-4 sm:grid-cols-2">
+        <input name="name" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Ad Soyad" required />
+        <input name="phone" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="+90 5XX XXX XX XX" value="+90 " required />
+        <input name="plate" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1 uppercase" placeholder="34 ABC 123" maxlength="12" required />
+        <input name="vehicle" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" placeholder="Araç Marka / Model" />
+        <div class="sm:col-span-2">
+          <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Hizmet</label>
+          <select id="staff-booking-service-select" name="serviceId" class="soft-input w-full rounded-2xl px-4 py-3"></select>
+        </div>
+        <input name="date" type="date" class="soft-input rounded-2xl px-4 py-3 sm:col-span-1" required />
+        <div class="sm:col-span-1">
+          <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Saat</label>
+          <input name="time" type="time" class="soft-input w-full rounded-2xl px-4 py-3" required />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Durum</label>
+          <select name="status" class="soft-input w-full rounded-2xl px-4 py-3">
+            <option value="Onaylandı">Onaylandı</option>
+            <option value="Beklemede">Beklemede</option>
+          </select>
+        </div>
+        <textarea name="note" rows="3" class="soft-input rounded-2xl px-4 py-3 sm:col-span-2" placeholder="Not / Talep"></textarea>
+        <div class="flex justify-end gap-3 sm:col-span-2">
+          <button type="button" id="cancel-staff-appointment" class="rounded-2xl border border-slate-700 px-5 py-3 text-slate-200 transition hover:border-cyan-400 hover:text-cyan-200">İptal</button>
+          <button type="submit" class="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"><i class="fa-solid fa-calendar-plus mr-2"></i>Randevu Oluştur</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="edit-record-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/85 px-4 py-6 backdrop-blur-sm">
     <div class="glass rise w-full max-w-2xl rounded-[2rem] p-6">
       <div class="mb-6 flex items-center justify-between gap-4">
@@ -373,9 +412,18 @@
       }, 4000);
     }
 
+    let _audioCtx = null;
+    function getAudioContext() {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (_audioCtx.state === "suspended") _audioCtx.resume().catch(() => {});
+      return _audioCtx;
+    }
+    // Kullanıcının ilk etkileşiminde AudioContext'i hazırla (tarayıcı autoplay politikası)
+    document.addEventListener("click", () => { try { getAudioContext(); } catch {} }, { once: false, passive: true });
+
     function playNotificationSound() {
       try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioCtx = getAudioContext();
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
         oscillator.connect(gainNode);
@@ -833,7 +881,7 @@
     }
 
     function updateStaffServiceSelects() {
-      ["service-select", "quote-service-select", "settings-service-template"].forEach((id) => {
+      ["service-select", "quote-service-select", "settings-service-template", "staff-booking-service-select"].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
         const current = el.value;
@@ -1465,6 +1513,9 @@
                 <p class="text-xs uppercase tracking-[0.3em] text-cyan-300">Randevu Yönetimi</p>
                 <h2 class="mt-1 text-2xl font-semibold text-white">Tüm Randevular</h2>
               </div>
+              <button id="open-staff-appointment-modal" class="flex items-center gap-2 rounded-2xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-400">
+                <i class="fa-solid fa-calendar-plus"></i>Randevu Oluştur
+              </button>
             </div>
             <div id="appointments-table" class="mt-5"></div>
           </div>
@@ -2405,6 +2456,43 @@
       renderAllRemindersList();
     }
 
+    async function submitStaffBooking(form) {
+      const data = new FormData(form);
+      const serviceId = data.get("serviceId");
+      const service = serviceMetaById(serviceId);
+      const dateStr = String(data.get("date") || "");
+      const timeStr = String(data.get("time") || "");
+      const status = String(data.get("status") || "Onaylandı");
+
+      const payload = {
+        name: String(data.get("name") || "").trim(),
+        phone: String(data.get("phone") || "").trim(),
+        plate: String(data.get("plate") || "").trim().toUpperCase(),
+        vehicle: String(data.get("vehicle") || "").trim(),
+        serviceId,
+        serviceName: service?.name || "",
+        serviceCategory: service?.category || "wash",
+        requestedDate: dateStr,
+        requestedTime: timeStr,
+        note: String(data.get("note") || "").trim(),
+        status,
+        createdBy: state.session?.username || "Personel",
+        createdAt: nowISO()
+      };
+      try {
+        await addDoc(collection(db, "randevular"), payload);
+      } catch (err) {
+        showFirestoreWriteError("Randevu kaydı", err);
+        return;
+      }
+      closeModal("#staff-appointment-modal");
+      form.reset();
+      const phoneField = form.querySelector('[name="phone"]');
+      if (phoneField) phoneField.value = "+90 ";
+      await logActivity("Randevu Oluşturma", `${payload.plate} - ${payload.name} için ${dateStr} ${timeStr} randevusu oluşturuldu.`);
+      toast("Randevu Oluşturuldu", `${payload.name} için ${dateStr} ${timeStr} randevusu kaydedildi.`, "green");
+    }
+
     async function submitCustomerBooking(form) {
       const data = new FormData(form);
       const serviceId = data.get("serviceId");
@@ -3268,6 +3356,16 @@
         modal.classList.remove("flex");
         return; 
       }
+      if (btn.id === "open-staff-appointment-modal") {
+        const modal = document.getElementById("staff-appointment-modal");
+        modal.classList.remove("hidden"); modal.classList.add("flex");
+        updateStaffServiceSelects();
+        return;
+      }
+      if (btn.id === "close-staff-appointment-modal" || btn.id === "cancel-staff-appointment") {
+        closeModal("#staff-appointment-modal");
+        return;
+      }
       if (btn.id === "close-edit-record-modal" || btn.id === "cancel-edit-record") { 
         closeModal("#edit-record-modal");
         return; 
@@ -3328,6 +3426,7 @@
       try {
         if (form.id === "login-form") { attemptLogin(); return; }
         if (form.id === "customer-booking-form") { await submitCustomerBooking(form); return; }
+        if (form.id === "staff-appointment-form") { await submitStaffBooking(form); return; }
         if (form.id === "vehicle-intake-form") { await submitVehicleIntake(form); return; }
         if (form.id === "expense-form") { await submitExpense(form); return; }
         if (form.id === "user-form") { await submitUser(form); return; }
